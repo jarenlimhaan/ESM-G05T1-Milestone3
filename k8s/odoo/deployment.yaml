@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odoo
+  namespace: esm
+spec:
+  replicas: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: odoo
+  template:
+    metadata:
+      labels:
+        app: odoo
+    spec:
+      containers:
+        - name: odoo
+          image: odoo:16.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8069
+          env:
+            - name: HOST
+              value: "esm-enterprise-prod-odoo.cn82a6ooiios.ap-southeast-1.rds.amazonaws.com"
+            - name: PORT
+              value: "5432"
+            - name: USER
+              value: "odoo_admin"
+            - name: PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: odoo-db
+                  key: password
+          volumeMounts:
+            - name: odoo-data
+              mountPath: /var/lib/odoo
+      volumes:
+        - name: odoo-data
+          persistentVolumeClaim:
+            claimName: odoo-pvc

@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moodle
+  namespace: esm
+spec:
+  replicas: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: moodle
+  template:
+    metadata:
+      labels:
+        app: moodle
+    spec:
+      initContainers:
+        - name: init-moodle-code
+          image: alpine/git:2.47.2
+          command:
+            - sh
+            - -c
+            - |
+              if [ ! -f /work/index.php ]; then
+                git clone --depth 1 --branch MOODLE_404_STABLE https://github.com/moodle/moodle.git /work
+              fi
+              chown -R 33:33 /work
+          volumeMounts:
+            - name: moodle-app
+              mountPath: /work
+      containers:
+        - name: moodle
+          image: moodlehq/moodle-php-apache:8.4-bookworm
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: MOODLE_DATABASE_TYPE
+              value: mysqli
+            - name: MOODLE_DATABASE_HOST
+              value: "esm-enterprise-prod-moodle.cn82a6ooiios.ap-southeast-1.rds.amazonaws.com"
+            - name: MOODLE_DATABASE_PORT_NUMBER
+              value: "3306"
+            - name: MOODLE_DATABASE_USER
+              value: "moodle_admin"
+            - name: MOODLE_DATABASE_NAME
+              value: "moodledb"
+            - name: MOODLE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: moodle-db
+                  key: password
+          volumeMounts:
+            - name: moodle-app
+              mountPath: /var/www/html
+          readinessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 90
+            periodSeconds: 20
+      volumes:
+        - name: moodle-app
+          emptyDir: {}

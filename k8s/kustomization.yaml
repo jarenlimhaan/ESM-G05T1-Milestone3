@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - secrets.yaml
+  - storage/odoo-storage.yaml
+  - odoo/deployment.yaml
+  - odoo/service.yaml
+  - odoo/service-public.yaml
+  - odoo/service-vpn.yaml
+  - moodle/deployment.yaml
+  - moodle/service.yaml
+  - moodle/service-public.yaml
+  - moodle/service-vpn.yaml
