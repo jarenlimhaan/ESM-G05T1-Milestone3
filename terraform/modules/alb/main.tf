@@ -1,21 +1,28 @@
 # ==============================================================================
 # ALB Module - Main Configuration
 # ==============================================================================
-# This module creates an internal Application Load Balancer for routing traffic
-# to Kubernetes services. The ALB is deployed in private subnets only.
+# This module creates an Application Load Balancer for routing traffic
+# to Kubernetes services. It supports both internal and public ALBs.
+
+locals {
+  # ALB name max length is 32.
+  lb_name = substr("${var.project_name}-${var.environment}-${var.alb_name_suffix}-alb", 0, 32)
+  # Target group name max length is 32.
+  tg_prefix = substr("${var.project_name}-${var.environment}-${var.alb_name_suffix}", 0, 22)
+}
 
 # ==============================================================================
 # Load Balancer
 # ==============================================================================
-# Internal ALB - not accessible from public internet
+# ALB can be internal or internet-facing based on var.internal
 
 resource "aws_lb" "main" {
-  name               = "${var.project_name}-${var.environment}-alb"
-  internal           = true # Internal ALB only
+  name               = local.lb_name
+  internal           = var.internal
   load_balancer_type = "application"
 
-  # Deploy in private subnets only
-  subnets = var.private_subnet_ids
+  # Deploy in provided subnets
+  subnets = var.subnet_ids
 
   # Security group for ALB
   security_groups = [var.alb_security_group_id]
@@ -50,7 +57,7 @@ resource "aws_lb" "main" {
 # Target groups for Odoo and Moodle services
 
 resource "aws_lb_target_group" "odoo" {
-  name        = "${var.project_name}-${var.environment}-odoo-tg"
+  name        = "${local.tg_prefix}-odoo-tg"
   port        = 80
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
@@ -88,7 +95,7 @@ resource "aws_lb_target_group" "odoo" {
 }
 
 resource "aws_lb_target_group" "moodle" {
-  name        = "${var.project_name}-${var.environment}-moodle-tg"
+  name        = "${local.tg_prefix}-moodle-tg"
   port        = 80
   protocol    = "HTTP"
   vpc_id      = var.vpc_id

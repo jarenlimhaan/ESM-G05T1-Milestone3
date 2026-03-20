@@ -55,7 +55,7 @@ variable "availability_zones" {
 variable "public_subnet_cidrs" {
   description = "CIDR blocks for public subnets"
   type        = list(string)
-  default     = ["10.0.1.0/24"]
+  default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
 variable "private_app_subnet_cidrs" {
@@ -68,6 +68,12 @@ variable "private_db_subnet_cidrs" {
   description = "CIDR blocks for private database subnets"
   type        = list(string)
   default     = ["10.0.20.0/24", "10.0.21.0/24"]
+}
+
+variable "use_nat_instance" {
+  description = "Use NAT instance for private subnet outbound internet access"
+  type        = bool
+  default     = true
 }
 
 # ==============================================================================
@@ -183,6 +189,18 @@ variable "backup_retention_days" {
   default     = 14
 }
 
+variable "rds_automated_backup_retention_period" {
+  description = "RDS automated backup retention days (set 0 to rely on AWS Backup only)"
+  type        = number
+  default     = 0
+}
+
+variable "rds_skip_final_snapshot" {
+  description = "Skip final snapshot on RDS deletion"
+  type        = bool
+  default     = true
+}
+
 # ==============================================================================
 # ALB Configuration
 # ==============================================================================
@@ -191,6 +209,80 @@ variable "alb_certificate_arn" {
   description = "ARN of the ACM certificate for ALB (optional)"
   type        = string
   default     = ""
+}
+
+variable "public_alb_allowed_cidrs" {
+  description = "CIDR blocks that can access the public ALB"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "enable_waf" {
+  description = "Enable WAF on public ALB"
+  type        = bool
+  default     = true
+}
+
+variable "waf_rate_limit" {
+  description = "Per-IP rate limit (5-minute window) for AWS WAF rate-based rule"
+  type        = number
+  default     = 2000
+}
+
+# ==============================================================================
+# DNS Configuration
+# ==============================================================================
+
+variable "create_public_route53_zone" {
+  description = "Create public Route 53 hosted zone and records for public ALB"
+  type        = bool
+  default     = false
+}
+
+variable "public_route53_zone_name" {
+  description = "Public Route 53 hosted zone name (for example, example.com)"
+  type        = string
+  default     = ""
+}
+
+variable "create_private_route53_zone" {
+  description = "Create private Route 53 hosted zone and records for internal ALB"
+  type        = bool
+  default     = true
+}
+
+variable "private_route53_zone_name" {
+  description = "Private Route 53 hosted zone name (for example, internal.esm.local)"
+  type        = string
+  default     = "internal.esm.local"
+}
+
+variable "odoo_public_record_name" {
+  description = "Record prefix for public Odoo endpoint"
+  type        = string
+  default     = "odoo"
+}
+
+variable "odoo_internal_record_name" {
+  description = "Record prefix for internal Odoo endpoint"
+  type        = string
+  default     = "odoo"
+}
+
+variable "moodle_internal_record_name" {
+  description = "Record prefix for internal Moodle endpoint"
+  type        = string
+  default     = "moodle"
+}
+
+# ==============================================================================
+# Audit Configuration
+# ==============================================================================
+
+variable "enable_cloudtrail" {
+  description = "Enable AWS CloudTrail for audit logging"
+  type        = bool
+  default     = true
 }
 
 # ==============================================================================

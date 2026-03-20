@@ -32,19 +32,18 @@ locals {
 module "vpc" {
   source = "./modules/vpc"
 
-  project_name       = var.project_name
-  environment        = var.environment
-  vpc_cidr           = var.vpc_cidr
-  availability_zones = var.availability_zones
-  # Use a single public subnet for a single NAT Gateway (cost-optimized).
-  # Both private AZs route outbound traffic through this NAT.
-  public_subnet_cidrs = slice(var.public_subnet_cidrs, 0, 1)
+  project_name        = var.project_name
+  environment         = var.environment
+  vpc_cidr            = var.vpc_cidr
+  availability_zones  = var.availability_zones
+  public_subnet_cidrs = var.public_subnet_cidrs
 
   private_app_subnet_cidrs = var.private_app_subnet_cidrs
   private_db_subnet_cidrs  = var.private_db_subnet_cidrs
 
-  enable_nat_gateway = true
+  enable_nat_gateway = !var.use_nat_instance
   single_nat_gateway = true
+  use_nat_instance   = var.use_nat_instance
   aws_region         = var.aws_region
 
   common_tags = local.common_tags
@@ -64,7 +63,8 @@ module "security_groups" {
   vpc_id       = module.vpc.vpc_id
   vpc_cidr     = module.vpc.vpc_cidr
 
-  vpn_client_cidr = var.vpn_client_cidr
+  vpn_client_cidr          = var.vpn_client_cidr
+  public_alb_allowed_cidrs = var.public_alb_allowed_cidrs
 
   common_tags = local.common_tags
 }
@@ -103,7 +103,9 @@ module "rds" {
   moodle_instance_class = var.db_instance_class
 
   # Backup Configuration
-  backup_retention_period = var.backup_retention_days
+  backup_retention_period           = var.backup_retention_days
+  automated_backup_retention_period = var.rds_automated_backup_retention_period
+  skip_final_snapshot               = var.rds_skip_final_snapshot
 
   common_tags = local.common_tags
 }
@@ -218,23 +220,27 @@ module "eks" {
 }
 
 # ==============================================================================
-# Module: ALB (Application Load Balancer)
+# Module: Public ALB (Application Load Balancer)
 # ==============================================================================
-# Creates internal ALB for routing traffic to Kubernetes services.
+# Creates internet-facing ALB for public workloads.
 # Depends on VPC for subnets and Security Groups for HTTP access.
 
-module "alb" {
+module "alb_public" {
   source = "./modules/alb"
 
   project_name = var.project_name
   environment  = var.environment
 
   # VPC Configuration
-  vpc_id             = module.vpc.vpc_id
-  private_subnet_ids = module.vpc.private_app_subnet_ids
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.public_subnet_ids
 
   # Security Groups
-  alb_security_group_id = module.security_groups.alb_sg_id
+  alb_security_group_id = module.security_groups.public_alb_sg_id
+
+  # Public LB
+  internal        = false
+  alb_name_suffix = "public"
 
   # Certificate
   certificate_arn = var.alb_certificate_arn
@@ -242,6 +248,102 @@ module "alb" {
   common_tags = local.common_tags
 
   depends_on = [module.eks]
+}
+
+# ==============================================================================
+# Module: Internal ALB (Application Load Balancer)
+# ==============================================================================
+# Creates internal ALB for VPN-only workloads.
+
+module "alb_internal" {
+  source = "./modules/alb"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  # VPC Configuration
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_app_subnet_ids
+
+  # Security Groups
+  alb_security_group_id = module.security_groups.internal_alb_sg_id
+
+  # Internal LB
+  internal        = true
+  alb_name_suffix = "internal"
+
+  # Certificate
+  certificate_arn = var.alb_certificate_arn
+
+  common_tags = local.common_tags
+
+  depends_on = [module.eks]
+}
+
+# ==============================================================================
+# Module: WAF
+# ==============================================================================
+# Protect public ALB with managed and rate-limiting rules.
+
+module "waf" {
+  source = "./modules/waf"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  enable_waf     = var.enable_waf
+  waf_rate_limit = var.waf_rate_limit
+  alb_public_arn = module.alb_public.alb_arn
+  common_tags    = local.common_tags
+
+  depends_on = [module.alb_public]
+}
+
+# ==============================================================================
+# Module: DNS (Route 53)
+# ==============================================================================
+# Creates optional public and private hosted zones plus ALB alias records.
+
+module "dns" {
+  source = "./modules/dns"
+
+  project_name = var.project_name
+  environment  = var.environment
+  vpc_id       = module.vpc.vpc_id
+
+  create_public_zone  = var.create_public_route53_zone
+  public_zone_name    = var.public_route53_zone_name
+  create_private_zone = var.create_private_route53_zone
+  private_zone_name   = var.private_route53_zone_name
+
+  odoo_public_record_name     = var.odoo_public_record_name
+  odoo_internal_record_name   = var.odoo_internal_record_name
+  moodle_internal_record_name = var.moodle_internal_record_name
+
+  public_alb_dns_name   = module.alb_public.alb_dns_name
+  public_alb_zone_id    = module.alb_public.alb_zone_id
+  internal_alb_dns_name = module.alb_internal.alb_dns_name
+  internal_alb_zone_id  = module.alb_internal.alb_zone_id
+
+  common_tags = local.common_tags
+
+  depends_on = [module.alb_public, module.alb_internal]
+}
+
+# ==============================================================================
+# Module: CloudTrail
+# ==============================================================================
+# Captures AWS API audit logs to S3 and CloudWatch.
+
+module "cloudtrail" {
+  source = "./modules/cloudtrail"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  enable_cloudtrail = var.enable_cloudtrail
+
+  common_tags = local.common_tags
 }
 
 # ==============================================================================

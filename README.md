@@ -34,8 +34,10 @@ terraform -chdir=terraform apply -auto-approve
 # 2) Configure kubectl for EKS
 aws eks update-kubeconfig --name esm-enterprise-prod-eks --region ap-southeast-1
 
-# 3) Deploy apps
-kubectl apply -k k8s
+# 3) Deploy apps (renders fresh Terraform outputs into manifests)
+./scripts/deploy-k8s-apps.ps1 `
+  -OdooDbPassword "ChangeMeSecurePassword123!" `
+  -MoodleDbPassword "ChangeMeSecurePassword456!"
 
 # 4) Verify
 kubectl get pods -n esm
@@ -45,11 +47,12 @@ kubectl get svc -n esm -o wide
 ## Access Endpoints
 
 ```powershell
-kubectl get svc -n esm odoo-public odoo-vpn moodle-public moodle-vpn
+kubectl get svc -n esm odoo-public odoo-vpn moodle-vpn
 ```
 
-- `*-public`: internet-facing NLB endpoint
-- `*-vpn`: internal NLB endpoint (for VPN/private routing)
+- `odoo-public`: internet-facing NLB endpoint (public Odoo routes)
+- `odoo-vpn`: internal NLB endpoint for Odoo admin/backend
+- `moodle-vpn`: internal NLB endpoint (for VPN/private routing)
 
 ## Pod Health Commands
 
@@ -77,7 +80,9 @@ terraform -chdir=terraform destroy -auto-approve
 terraform -chdir=terraform init
 terraform -chdir=terraform apply -auto-approve
 aws eks update-kubeconfig --name esm-enterprise-prod-eks --region ap-southeast-1
-kubectl apply -k k8s
+./scripts/deploy-k8s-apps.ps1 `
+  -OdooDbPassword "ChangeMeSecurePassword123!" `
+  -MoodleDbPassword "ChangeMeSecurePassword456!"
 ```
 
 For full deployment and troubleshooting flow, use `DEPLOYMENT.md`.

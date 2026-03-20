@@ -38,6 +38,16 @@ output "nat_gateway_ids" {
   value       = aws_nat_gateway.main[*].id
 }
 
+output "nat_instance_id" {
+  description = "ID of NAT instance (if enabled)"
+  value       = length(aws_instance.nat) > 0 ? aws_instance.nat[0].id : null
+}
+
+output "nat_instance_public_ip" {
+  description = "Public IP of NAT instance (if enabled)"
+  value       = length(aws_eip.nat_instance) > 0 ? aws_eip.nat_instance[0].public_ip : null
+}
+
 output "public_route_table_id" {
   description = "ID of the public route table"
   value       = aws_route_table.public.id

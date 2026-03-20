@@ -4,7 +4,7 @@ metadata:
   name: moodle
   namespace: esm
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: Recreate
   selector:
@@ -31,7 +31,7 @@ spec:
               mountPath: /work
       containers:
         - name: moodle
-          image: moodlehq/moodle-php-apache:8.4-bookworm
+          image: moodlehq/moodle-php-apache:8.2-bookworm
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
@@ -39,13 +39,13 @@ spec:
             - name: MOODLE_DATABASE_TYPE
               value: mysqli
             - name: MOODLE_DATABASE_HOST
-              value: "esm-enterprise-prod-moodle.cn82a6ooiios.ap-southeast-1.rds.amazonaws.com"
+              value: "__MOODLE_DB_HOST__"
             - name: MOODLE_DATABASE_PORT_NUMBER
               value: "3306"
             - name: MOODLE_DATABASE_USER
-              value: "moodle_admin"
+              value: "__MOODLE_DB_USER__"
             - name: MOODLE_DATABASE_NAME
-              value: "moodledb"
+              value: "__MOODLE_DB_NAME__"
             - name: MOODLE_DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -54,6 +54,13 @@ spec:
           volumeMounts:
             - name: moodle-app
               mountPath: /var/www/html
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
           readinessProbe:
             tcpSocket:
               port: 80

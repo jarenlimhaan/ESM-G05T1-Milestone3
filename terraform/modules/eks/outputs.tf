@@ -44,6 +44,11 @@ output "cluster_oidc_provider_arn" {
   value       = aws_iam_openid_connect_provider.oidc_provider.arn
 }
 
+output "cluster_autoscaler_role_arn" {
+  description = "IAM role ARN used by the Kubernetes Cluster Autoscaler"
+  value       = aws_iam_role.cluster_autoscaler.arn
+}
+
 output "node_group_id" {
   description = "EKS Node Group ID"
   value       = aws_eks_node_group.main.id
@@ -62,6 +67,11 @@ output "node_group_status" {
 output "node_group_resources" {
   description = "List of node group resources"
   value       = aws_eks_node_group.main.resources
+}
+
+output "node_group_autoscaling_group_name" {
+  description = "Auto Scaling Group name backing the managed node group"
+  value       = aws_eks_node_group.main.resources[0].autoscaling_groups[0].name
 }
 
 output "cloudwatch_log_group_arn" {

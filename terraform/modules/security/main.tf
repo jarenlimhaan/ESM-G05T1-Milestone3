@@ -5,27 +5,75 @@
 # Each security group allows only the necessary ports and protocols.
 
 # ==============================================================================
-# ALB Security Group
+# Public ALB Security Group
 # ==============================================================================
-# Allows inbound HTTP/HTTPS from VPN clients
-# Allows outbound to EKS nodes
+# Allows inbound HTTP/HTTPS from public internet (or configured CIDRs)
 
-resource "aws_security_group" "alb" {
-  name_prefix = "${var.project_name}-${var.environment}-alb-"
+resource "aws_security_group" "public_alb" {
+  name_prefix = "${var.project_name}-${var.environment}-public-alb-"
+  description = "Security group for the public Application Load Balancer"
+  vpc_id      = var.vpc_id
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name = "${var.project_name}-${var.environment}-public-alb-sg"
+    }
+  )
+}
+
+# Allow HTTP from public CIDRs
+resource "aws_vpc_security_group_ingress_rule" "public_alb_http" {
+  for_each          = toset(var.public_alb_allowed_cidrs)
+  security_group_id = aws_security_group.public_alb.id
+  cidr_ipv4         = each.value
+  from_port         = 80
+  ip_protocol       = "tcp"
+  to_port           = 80
+  description       = "Allow HTTP to public ALB"
+}
+
+# Allow HTTPS from public CIDRs
+resource "aws_vpc_security_group_ingress_rule" "public_alb_https" {
+  for_each          = toset(var.public_alb_allowed_cidrs)
+  security_group_id = aws_security_group.public_alb.id
+  cidr_ipv4         = each.value
+  from_port         = 443
+  ip_protocol       = "tcp"
+  to_port           = 443
+  description       = "Allow HTTPS to public ALB"
+}
+
+# Allow outbound to EKS nodes for health checks
+resource "aws_vpc_security_group_egress_rule" "public_alb_to_eks" {
+  security_group_id = aws_security_group.public_alb.id
+  cidr_ipv4         = var.vpc_cidr
+  from_port         = 80
+  ip_protocol       = "tcp"
+  to_port           = 65535
+  description       = "Allow outbound to EKS nodes"
+}
+
+# ==============================================================================
+# Internal ALB Security Group
+# ==============================================================================
+# Allows inbound HTTP/HTTPS only from VPN clients
+
+resource "aws_security_group" "internal_alb" {
+  name_prefix = "${var.project_name}-${var.environment}-internal-alb-"
   description = "Security group for the internal Application Load Balancer"
   vpc_id      = var.vpc_id
 
   tags = merge(
     var.common_tags,
     {
-      Name = "${var.project_name}-${var.environment}-alb-sg"
+      Name = "${var.project_name}-${var.environment}-internal-alb-sg"
     }
   )
 }
 
-# Allow HTTP from VPN clients
-resource "aws_vpc_security_group_ingress_rule" "alb_http_vpn" {
-  security_group_id = aws_security_group.alb.id
+resource "aws_vpc_security_group_ingress_rule" "internal_alb_http_vpn" {
+  security_group_id = aws_security_group.internal_alb.id
   cidr_ipv4         = var.vpn_client_cidr
   from_port         = 80
   ip_protocol       = "tcp"
@@ -33,9 +81,8 @@ resource "aws_vpc_security_group_ingress_rule" "alb_http_vpn" {
   description       = "Allow HTTP from VPN clients"
 }
 
-# Allow HTTPS from VPN clients
-resource "aws_vpc_security_group_ingress_rule" "alb_https_vpn" {
-  security_group_id = aws_security_group.alb.id
+resource "aws_vpc_security_group_ingress_rule" "internal_alb_https_vpn" {
+  security_group_id = aws_security_group.internal_alb.id
   cidr_ipv4         = var.vpn_client_cidr
   from_port         = 443
   ip_protocol       = "tcp"
@@ -43,9 +90,8 @@ resource "aws_vpc_security_group_ingress_rule" "alb_https_vpn" {
   description       = "Allow HTTPS from VPN clients"
 }
 
-# Allow outbound to EKS nodes for health checks
-resource "aws_vpc_security_group_egress_rule" "alb_to_eks" {
-  security_group_id = aws_security_group.alb.id
+resource "aws_vpc_security_group_egress_rule" "internal_alb_to_eks" {
+  security_group_id = aws_security_group.internal_alb.id
   cidr_ipv4         = var.vpc_cidr
   from_port         = 80
   ip_protocol       = "tcp"
@@ -109,14 +155,24 @@ resource "aws_security_group" "eks_nodes" {
   )
 }
 
-# Allow inbound from ALB
-resource "aws_vpc_security_group_ingress_rule" "eks_nodes_from_alb" {
+# Allow inbound from public ALB
+resource "aws_vpc_security_group_ingress_rule" "eks_nodes_from_public_alb" {
   security_group_id            = aws_security_group.eks_nodes.id
-  referenced_security_group_id = aws_security_group.alb.id
+  referenced_security_group_id = aws_security_group.public_alb.id
   from_port                    = 30000
   ip_protocol                  = "tcp"
   to_port                      = 32767
-  description                  = "Allow NodePort services from ALB"
+  description                  = "Allow NodePort services from public ALB"
+}
+
+# Allow inbound from internal ALB
+resource "aws_vpc_security_group_ingress_rule" "eks_nodes_from_internal_alb" {
+  security_group_id            = aws_security_group.eks_nodes.id
+  referenced_security_group_id = aws_security_group.internal_alb.id
+  from_port                    = 30000
+  ip_protocol                  = "tcp"
+  to_port                      = 32767
+  description                  = "Allow NodePort services from internal ALB"
 }
 
 # Allow inbound from EKS cluster

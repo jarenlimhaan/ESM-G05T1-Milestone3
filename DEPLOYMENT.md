@@ -47,7 +47,9 @@ kubectl get nodes
 ## 4) Deploy Kubernetes Apps
 
 ```powershell
-kubectl apply -k k8s
+./scripts/deploy-k8s-apps.ps1 `
+  -OdooDbPassword "ChangeMeSecurePassword123!" `
+  -MoodleDbPassword "ChangeMeSecurePassword456!"
 ```
 
 Or use the Bash helper:
@@ -85,23 +87,21 @@ kubectl logs -n esm deployment/moodle --tail=100
 ## 6) Find Access Endpoints
 
 ```powershell
-kubectl get svc -n esm odoo-public odoo-vpn moodle-public moodle-vpn
+kubectl get svc -n esm odoo-public moodle-vpn
 ```
 
 Expected:
 
 - `odoo-public`: public endpoint
-- `odoo-vpn`: private/internal endpoint
-- `moodle-public`: public endpoint
 - `moodle-vpn`: private/internal endpoint
 
 Quick HTTP checks:
 
 ```powershell
 $odooPub = (kubectl get svc odoo-public -n esm -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
-$moodlePub = (kubectl get svc moodle-public -n esm -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+$moodleVpn = (kubectl get svc moodle-vpn -n esm -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
 curl.exe -s -o NUL -w "%{http_code}`n" http://$odooPub/web/login
-curl.exe -s -o NUL -w "%{http_code}`n" http://$moodlePub/login/index.php
+curl.exe -s -o NUL -w "%{http_code}`n" http://$moodleVpn/login/index.php
 ```
 
 ## 7) Runtime Operations
@@ -139,7 +139,9 @@ terraform -chdir=terraform destroy -auto-approve
 terraform -chdir=terraform init
 terraform -chdir=terraform apply -auto-approve
 aws eks update-kubeconfig --name esm-enterprise-prod-eks --region ap-southeast-1
-kubectl apply -k k8s
+./scripts/deploy-k8s-apps.ps1 `
+  -OdooDbPassword "ChangeMeSecurePassword123!" `
+  -MoodleDbPassword "ChangeMeSecurePassword456!"
 kubectl get pods -n esm
 kubectl get svc -n esm -o wide
 ```

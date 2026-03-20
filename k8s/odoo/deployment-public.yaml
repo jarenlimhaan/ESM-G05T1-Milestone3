@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: odoo-private
+  name: odoo-public
   namespace: esm
 spec:
   replicas: 1
@@ -9,11 +9,11 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: odoo-private
+      app: odoo-public
   template:
     metadata:
       labels:
-        app: odoo-private
+        app: odoo-public
     spec:
       containers:
         - name: odoo
@@ -22,8 +22,6 @@ spec:
           args:
             - "--database=__ODOO_DB_NAME__"
             - "--db-filter=^__ODOO_DB_NAME__$"
-            - "--init=base"
-            - "--without-demo=all"
           ports:
             - containerPort: 8069
           env:

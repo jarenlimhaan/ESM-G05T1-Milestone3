@@ -1,6 +1,6 @@
 # Kubernetes Workloads
 
-This folder contains Kubernetes manifests for application workloads only.
+This folder contains Kubernetes manifests for the application workloads and the autoscaling components they depend on.
 
 ## Structure
 
@@ -9,8 +9,9 @@ This folder contains Kubernetes manifests for application workloads only.
 - `storage/odoo-storage.yaml`: Static EFS PV and PVC for Odoo.
 - `odoo/`: Odoo deployment and service.
 - `moodle/`: Moodle deployment and service.
-- `odoo/service-public.yaml`, `moodle/service-public.yaml`: internet-facing NLB services.
-- `odoo/service-vpn.yaml`, `moodle/service-vpn.yaml`: internal NLB services for VPN clients.
+- `odoo/service-public.yaml`: internet-facing NLB service for public Odoo routes.
+- `odoo/service-vpn.yaml`: internal NLB service for Odoo admin/backend (`/web`) via VPN.
+- `moodle/service-vpn.yaml`: internal NLB service for Moodle (VPN clients only).
 
 ## Deploy
 
@@ -22,6 +23,12 @@ From the repository root:
   -MoodleDbPassword "<moodle-password>"
 ```
 
+```bash
+./scripts/deploy-k8s-apps.sh \
+  --odoo-db-password "<odoo-password>" \
+  --moodle-db-password "<moodle-password>"
+```
+
 The script:
 
 1. Reads infrastructure values from Terraform outputs.
@@ -29,10 +36,12 @@ The script:
 3. Renders manifest placeholders into a temporary directory.
 4. Runs `kubectl apply -k` against the rendered manifests.
 
+Do not run `kubectl apply -k k8s` directly unless placeholders are already rendered.
+
 After deployment, get access endpoints:
 
 ```powershell
-kubectl get svc -n esm odoo-public odoo-vpn moodle-public moodle-vpn
+kubectl get svc -n esm odoo-public odoo-vpn moodle-vpn
 ```
 
 ## Prerequisites

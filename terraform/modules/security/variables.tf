@@ -28,6 +28,12 @@ variable "vpn_client_cidr" {
   type        = string
 }
 
+variable "public_alb_allowed_cidrs" {
+  description = "CIDR blocks allowed to access the public ALB"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 variable "common_tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)

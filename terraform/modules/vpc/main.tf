@@ -19,6 +19,11 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+locals {
+  # Matches the EKS module naming convention in this repo.
+  eks_cluster_name = "${var.project_name}-${var.environment}-eks"
+}
+
 # ==============================================================================
 # VPC
 # ==============================================================================
@@ -61,8 +66,135 @@ resource "aws_internet_gateway" "main" {
 # Provides outbound internet access for private subnets
 # Deployed in public subnet to allow private resources to access external services
 
+data "aws_ami" "nat" {
+  count       = var.use_nat_instance ? 1 : 0
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+}
+
+resource "aws_security_group" "nat_instance" {
+  count = var.use_nat_instance ? 1 : 0
+
+  name_prefix = "${var.project_name}-${var.environment}-nat-instance-"
+  description = "Security group for NAT instance"
+  vpc_id      = aws_vpc.main.id
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name = "${var.project_name}-${var.environment}-nat-instance-sg"
+    }
+  )
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nat_from_private_app" {
+  count = var.use_nat_instance ? 1 : 0
+
+  security_group_id = aws_security_group.nat_instance[0].id
+  cidr_ipv4         = var.private_app_subnet_cidrs[0]
+  ip_protocol       = "-1"
+  description       = "Allow private app subnet 0 to use NAT instance"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nat_from_private_app_secondary" {
+  count = var.use_nat_instance && length(var.private_app_subnet_cidrs) > 1 ? 1 : 0
+
+  security_group_id = aws_security_group.nat_instance[0].id
+  cidr_ipv4         = var.private_app_subnet_cidrs[1]
+  ip_protocol       = "-1"
+  description       = "Allow private app subnet 1 to use NAT instance"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nat_from_private_db" {
+  count = var.use_nat_instance ? 1 : 0
+
+  security_group_id = aws_security_group.nat_instance[0].id
+  cidr_ipv4         = var.private_db_subnet_cidrs[0]
+  ip_protocol       = "-1"
+  description       = "Allow private db subnet 0 to use NAT instance"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nat_from_private_db_secondary" {
+  count = var.use_nat_instance && length(var.private_db_subnet_cidrs) > 1 ? 1 : 0
+
+  security_group_id = aws_security_group.nat_instance[0].id
+  cidr_ipv4         = var.private_db_subnet_cidrs[1]
+  ip_protocol       = "-1"
+  description       = "Allow private db subnet 1 to use NAT instance"
+}
+
+resource "aws_vpc_security_group_egress_rule" "nat_to_internet" {
+  count = var.use_nat_instance ? 1 : 0
+
+  security_group_id = aws_security_group.nat_instance[0].id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+  description       = "Allow NAT instance outbound internet traffic"
+}
+
+resource "aws_instance" "nat" {
+  count = var.use_nat_instance ? 1 : 0
+
+  ami                    = data.aws_ami.nat[0].id
+  instance_type          = "t3.nano"
+  subnet_id              = aws_subnet.public[0].id
+  vpc_security_group_ids = [aws_security_group.nat_instance[0].id]
+  source_dest_check      = false
+  user_data              = <<-EOT
+    #!/bin/bash
+    set -euxo pipefail
+
+    yum -y update
+    yum -y install iptables-services
+
+    sysctl -w net.ipv4.ip_forward=1
+    echo "net.ipv4.ip_forward = 1" > /etc/sysctl.d/99-nat.conf
+
+    iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+    iptables -A FORWARD -s ${var.vpc_cidr} -j ACCEPT
+    iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+    service iptables save
+    systemctl enable iptables
+    systemctl restart iptables
+  EOT
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name = "${var.project_name}-${var.environment}-nat-instance"
+    }
+  )
+}
+
+resource "aws_eip" "nat_instance" {
+  count  = var.use_nat_instance ? 1 : 0
+  domain = "vpc"
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name = "${var.project_name}-${var.environment}-nat-instance-eip"
+    }
+  )
+
+  depends_on = [aws_internet_gateway.main]
+}
+
+resource "aws_eip_association" "nat_instance" {
+  count = var.use_nat_instance ? 1 : 0
+
+  allocation_id = aws_eip.nat_instance[0].id
+  instance_id   = aws_instance.nat[0].id
+}
+
 resource "aws_eip" "nat" {
-  count  = var.single_nat_gateway ? 1 : length(var.availability_zones)
+  count  = var.enable_nat_gateway && !var.use_nat_instance ? (var.single_nat_gateway ? 1 : length(var.availability_zones)) : 0
   domain = "vpc"
 
   tags = merge(
@@ -76,7 +208,7 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "main" {
-  count         = var.single_nat_gateway ? 1 : length(var.availability_zones)
+  count         = var.enable_nat_gateway && !var.use_nat_instance ? (var.single_nat_gateway ? 1 : length(var.availability_zones)) : 0
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
 
@@ -106,8 +238,10 @@ resource "aws_subnet" "public" {
   tags = merge(
     var.common_tags,
     {
-      Name = "${var.project_name}-${var.environment}-public-${count.index}"
-      Type = "Public"
+      Name                                              = "${var.project_name}-${var.environment}-public-${count.index}"
+      Type                                              = "Public"
+      "kubernetes.io/cluster/${local.eks_cluster_name}" = "shared"
+      "kubernetes.io/role/elb"                          = "1"
     }
   )
 }
@@ -127,8 +261,10 @@ resource "aws_subnet" "private_app" {
   tags = merge(
     var.common_tags,
     {
-      Name = "${var.project_name}-${var.environment}-private-app-${count.index}"
-      Type = "Private-Application"
+      Name                                              = "${var.project_name}-${var.environment}-private-app-${count.index}"
+      Type                                              = "Private-Application"
+      "kubernetes.io/cluster/${local.eks_cluster_name}" = "shared"
+      "kubernetes.io/role/internal-elb"                 = "1"
     }
   )
 }
@@ -219,14 +355,6 @@ resource "aws_route_table_association" "public" {
 resource "aws_route_table" "private_app" {
   vpc_id = aws_vpc.main.id
 
-  dynamic "route" {
-    for_each = var.enable_nat_gateway ? [1] : []
-    content {
-      cidr_block     = "0.0.0.0/0"
-      nat_gateway_id = aws_nat_gateway.main[0].id
-    }
-  }
-
   tags = merge(
     var.common_tags,
     {
@@ -250,14 +378,6 @@ resource "aws_route_table_association" "private_app" {
 resource "aws_route_table" "private_db" {
   vpc_id = aws_vpc.main.id
 
-  dynamic "route" {
-    for_each = var.enable_nat_gateway ? [1] : []
-    content {
-      cidr_block     = "0.0.0.0/0"
-      nat_gateway_id = aws_nat_gateway.main[0].id
-    }
-  }
-
   tags = merge(
     var.common_tags,
     {
@@ -270,6 +390,38 @@ resource "aws_route_table_association" "private_db" {
   count          = length(var.private_db_subnet_cidrs)
   subnet_id      = aws_subnet.private_db[count.index].id
   route_table_id = aws_route_table.private_db.id
+}
+
+resource "aws_route" "private_app_nat_gateway" {
+  count = var.enable_nat_gateway && !var.use_nat_instance ? 1 : 0
+
+  route_table_id         = aws_route_table.private_app.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.main[0].id
+}
+
+resource "aws_route" "private_app_nat_instance" {
+  count = var.use_nat_instance ? 1 : 0
+
+  route_table_id         = aws_route_table.private_app.id
+  destination_cidr_block = "0.0.0.0/0"
+  network_interface_id   = aws_instance.nat[0].primary_network_interface_id
+}
+
+resource "aws_route" "private_db_nat_gateway" {
+  count = var.enable_nat_gateway && !var.use_nat_instance ? 1 : 0
+
+  route_table_id         = aws_route_table.private_db.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.main[0].id
+}
+
+resource "aws_route" "private_db_nat_instance" {
+  count = var.use_nat_instance ? 1 : 0
+
+  route_table_id         = aws_route_table.private_db.id
+  destination_cidr_block = "0.0.0.0/0"
+  network_interface_id   = aws_instance.nat[0].primary_network_interface_id
 }
 
 # ==============================================================================

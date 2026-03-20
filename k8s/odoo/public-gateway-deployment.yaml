@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odoo-public-gateway
+  namespace: esm
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: odoo-public-gateway
+  template:
+    metadata:
+      labels:
+        app: odoo-public-gateway
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: odoo-public-nginx-config

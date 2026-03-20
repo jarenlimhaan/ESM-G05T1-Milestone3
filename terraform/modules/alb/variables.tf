@@ -1,7 +1,7 @@
 # ==============================================================================
 # ALB Module Variables
 # ==============================================================================
-# Variables for configuring internal Application Load Balancer.
+# Variables for configuring Application Load Balancer.
 
 variable "project_name" {
   description = "Name of the project"
@@ -20,8 +20,8 @@ variable "vpc_id" {
   type        = string
 }
 
-variable "private_subnet_ids" {
-  description = "IDs of private application subnets"
+variable "subnet_ids" {
+  description = "Subnet IDs where the ALB will be deployed"
   type        = list(string)
 }
 
@@ -30,6 +30,18 @@ variable "private_subnet_ids" {
 variable "alb_security_group_id" {
   description = "Security group ID for ALB"
   type        = string
+}
+
+variable "internal" {
+  description = "Whether ALB is internal (true) or internet-facing (false)"
+  type        = bool
+  default     = true
+}
+
+variable "alb_name_suffix" {
+  description = "Suffix for ALB and target group names (for example: public, internal)"
+  type        = string
+  default     = "internal"
 }
 
 # Certificate

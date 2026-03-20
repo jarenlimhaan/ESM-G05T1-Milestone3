@@ -4,8 +4,18 @@
 # Security Group IDs for use by other modules.
 
 output "alb_sg_id" {
-  description = "Security group ID for the ALB"
-  value       = aws_security_group.alb.id
+  description = "Security group ID for the internal ALB (backward compatibility)"
+  value       = aws_security_group.internal_alb.id
+}
+
+output "public_alb_sg_id" {
+  description = "Security group ID for the public ALB"
+  value       = aws_security_group.public_alb.id
+}
+
+output "internal_alb_sg_id" {
+  description = "Security group ID for the internal ALB"
+  value       = aws_security_group.internal_alb.id
 }
 
 output "eks_cluster_sg_id" {
@@ -41,12 +51,13 @@ output "vpn_sg_id" {
 output "all_security_group_ids" {
   description = "Map of all security group IDs"
   value = {
-    alb         = aws_security_group.alb.id
-    eks_cluster = aws_security_group.eks_cluster.id
-    eks_nodes   = aws_security_group.eks_nodes.id
-    odoo_rds    = aws_security_group.odoo_rds.id
-    moodle_rds  = aws_security_group.moodle_rds.id
-    efs         = aws_security_group.efs.id
-    vpn         = aws_security_group.vpn.id
+    public_alb   = aws_security_group.public_alb.id
+    internal_alb = aws_security_group.internal_alb.id
+    eks_cluster  = aws_security_group.eks_cluster.id
+    eks_nodes    = aws_security_group.eks_nodes.id
+    odoo_rds     = aws_security_group.odoo_rds.id
+    moodle_rds   = aws_security_group.moodle_rds.id
+    efs          = aws_security_group.efs.id
+    vpn          = aws_security_group.vpn.id
   }
 }

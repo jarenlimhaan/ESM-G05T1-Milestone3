@@ -55,6 +55,12 @@ variable "single_nat_gateway" {
   default     = true
 }
 
+variable "use_nat_instance" {
+  description = "Use NAT instance instead of NAT Gateway for private subnet egress"
+  type        = bool
+  default     = false
+}
+
 variable "common_tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)

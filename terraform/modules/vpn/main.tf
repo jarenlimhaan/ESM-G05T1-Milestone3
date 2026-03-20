@@ -29,12 +29,17 @@ resource "tls_private_key" "vpn_server" {
 resource "tls_self_signed_cert" "vpn_server" {
   count           = local.use_imported_cert ? 0 : 1
   private_key_pem = tls_private_key.vpn_server[0].private_key_pem
+
+  validity_period_hours = 87600 # 10 years
+  is_ca_certificate     = true
+
   subject {
     common_name  = "vpn.esm.local"
     organization = "ESM Enterprise"
   }
-  validity_period_hours = 87600 # 10 years
   allowed_uses = [
+    "cert_signing",
+    "crl_signing",
     "key_encipherment",
     "digital_signature",
     "server_auth"
@@ -53,6 +58,8 @@ resource "aws_acm_certificate" "server" {
       Name = "${var.project_name}-${var.environment}-vpn-server-cert"
     }
   )
+
+  depends_on = [time_sleep.wait_for_cert_validity]
 }
 
 # Generate private key for VPN client
@@ -77,6 +84,17 @@ resource "tls_locally_signed_cert" "vpn_client" {
   ]
 }
 
+# Give generated cert timestamps time to be safely in ACM validity window.
+resource "time_sleep" "wait_for_cert_validity" {
+  count           = local.use_imported_cert ? 0 : 1
+  create_duration = "90s"
+
+  depends_on = [
+    tls_self_signed_cert.vpn_server,
+    tls_locally_signed_cert.vpn_client
+  ]
+}
+
 resource "tls_cert_request" "vpn_client" {
   count           = local.use_imported_cert ? 0 : 1
   private_key_pem = tls_private_key.vpn_client[0].private_key_pem
@@ -98,6 +116,8 @@ resource "aws_acm_certificate" "client" {
       Name = "${var.project_name}-${var.environment}-vpn-client-cert"
     }
   )
+
+  depends_on = [time_sleep.wait_for_cert_validity]
 }
 
 # ==============================================================================
@@ -128,7 +148,7 @@ resource "aws_ec2_client_vpn_endpoint" "main" {
   dns_servers = ["10.0.0.2"] # Use VPC DNS resolver
 
   # VPN protocol
-  transport_protocol = "udp"
+  transport_protocol = "tcp"
 
   # VPN port
   vpn_port = 443

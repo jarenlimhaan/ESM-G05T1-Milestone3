@@ -149,10 +149,11 @@ resource "aws_db_instance" "odoo" {
   # multi_az               = true
 
   # Backup configuration
-  backup_retention_period   = var.backup_retention_period
+  backup_retention_period   = var.automated_backup_retention_period
   backup_window             = var.backup_window
-  skip_final_snapshot       = false
-  final_snapshot_identifier = "${var.project_name}-${var.environment}-odoo-final-snapshot"
+  delete_automated_backups  = true
+  skip_final_snapshot       = var.skip_final_snapshot
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.project_name}-${var.environment}-odoo-final-snapshot"
 
   # Maintenance
   maintenance_window         = var.maintenance_window
@@ -211,10 +212,11 @@ resource "aws_db_instance" "moodle" {
   # multi_az               = true
 
   # Backup configuration
-  backup_retention_period   = var.backup_retention_period
+  backup_retention_period   = var.automated_backup_retention_period
   backup_window             = var.backup_window
-  skip_final_snapshot       = false
-  final_snapshot_identifier = "${var.project_name}-${var.environment}-moodle-final-snapshot"
+  delete_automated_backups  = true
+  skip_final_snapshot       = var.skip_final_snapshot
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.project_name}-${var.environment}-moodle-final-snapshot"
 
   # Maintenance
   maintenance_window         = var.maintenance_window

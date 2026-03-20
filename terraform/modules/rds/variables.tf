@@ -99,6 +99,18 @@ variable "backup_retention_period" {
   type        = number
 }
 
+variable "automated_backup_retention_period" {
+  description = "RDS automated backup retention period in days (0 disables automated RDS backups)"
+  type        = number
+  default     = 0
+}
+
+variable "skip_final_snapshot" {
+  description = "Skip final snapshot when deleting RDS instances"
+  type        = bool
+  default     = true
+}
+
 variable "backup_window" {
   description = "Preferred backup window in UTC"
   type        = string
