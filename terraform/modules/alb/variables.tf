@@ -59,3 +59,80 @@ variable "common_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_odoo" {
+  description = "Whether to create Odoo listener rules and target group attachment"
+  type        = bool
+  default     = true
+}
+
+variable "enable_moodle" {
+  description = "Whether to create Moodle listener rules and target group attachment"
+  type        = bool
+  default     = true
+}
+
+variable "enable_osticket" {
+  description = "Whether to create osTicket listener rules and target group attachment"
+  type        = bool
+  default     = true
+}
+
+variable "odoo_node_port" {
+  description = "Kubernetes NodePort for Odoo"
+  type        = number
+  default     = 30080
+}
+
+variable "odoo_path_patterns" {
+  description = "Path patterns to route to Odoo target group"
+  type        = list(string)
+  default     = ["/odoo*"]
+}
+
+variable "odoo_host_headers" {
+  description = "Optional host headers to route to Odoo target group"
+  type        = list(string)
+  default     = []
+}
+
+variable "moodle_node_port" {
+  description = "Kubernetes NodePort for Moodle"
+  type        = number
+  default     = 30082
+}
+
+variable "moodle_path_patterns" {
+  description = "Path patterns to route to Moodle target group"
+  type        = list(string)
+  default     = ["/moodle*"]
+}
+
+variable "moodle_host_headers" {
+  description = "Optional host headers to route to Moodle target group"
+  type        = list(string)
+  default     = []
+}
+
+variable "osticket_node_port" {
+  description = "Kubernetes NodePort for osTicket"
+  type        = number
+  default     = 30083
+}
+
+variable "osticket_path_patterns" {
+  description = "Path patterns to route to osTicket target group"
+  type        = list(string)
+  default     = ["/osticket*"]
+}
+
+variable "osticket_host_headers" {
+  description = "Optional host headers to route to osTicket target group"
+  type        = list(string)
+  default     = []
+}
+
+variable "node_group_asg_name" {
+  description = "EKS managed node group Auto Scaling Group name"
+  type        = string
+}

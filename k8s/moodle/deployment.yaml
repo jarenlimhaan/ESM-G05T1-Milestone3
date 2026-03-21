@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: moodle
-  namespace: esm
+  namespace: moodle-private
 spec:
   replicas: 1
   strategy:

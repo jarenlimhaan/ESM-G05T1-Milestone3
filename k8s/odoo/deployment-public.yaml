@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: odoo-public
-  namespace: esm
+  namespace: odoo-public
 spec:
   replicas: 1
   strategy:
@@ -51,4 +51,4 @@ spec:
       volumes:
         - name: odoo-data
           persistentVolumeClaim:
-            claimName: odoo-pvc
+            claimName: odoo-public-pvc

@@ -275,6 +275,12 @@ variable "moodle_internal_record_name" {
   default     = "moodle"
 }
 
+variable "osticket_internal_record_name" {
+  description = "Record prefix for internal osTicket endpoint"
+  type        = string
+  default     = "osticket"
+}
+
 # ==============================================================================
 # Audit Configuration
 # ==============================================================================

@@ -1,182 +1,136 @@
-# Deployment Runbook
+﻿# Deployment Runbook
 
-This guide is the full command reference to deploy, test, tear down, and redeploy the ESM stack.
+This document is the step-by-step runbook for creating and destroying the full stack safely.
 
-## 1) Pre-Flight Checks
+## 1) Initial Setup
 
-From repo root (`c:\Users\jaren\Documents\repos\esm`):
+1. Configure AWS credentials/profile.
+2. Ensure region is correct (`ap-southeast-1` unless you changed Terraform vars).
+3. Confirm tooling:
 
-```powershell
-aws --version
+```bash
+aws sts get-caller-identity
 terraform -version
 kubectl version --client
 ```
 
-Check AWS identity:
+## 2) Fresh Deployment
 
-```powershell
-aws sts get-caller-identity
-```
-
-## 2) Deploy Infrastructure (Terraform)
-
-```powershell
-terraform -chdir=terraform init
-terraform -chdir=terraform validate
-terraform -chdir=terraform plan -out tfplan
-terraform -chdir=terraform apply -auto-approve tfplan
-```
-
-Useful outputs:
-
-```powershell
-terraform -chdir=terraform output
-terraform -chdir=terraform output -json
-terraform -chdir=terraform output -raw eks_cluster_name
-terraform -chdir=terraform output -raw aws_region
-```
-
-## 3) Connect kubectl to EKS
-
-```powershell
-aws eks update-kubeconfig --name esm-enterprise-prod-eks --region ap-southeast-1
-kubectl config current-context
-kubectl get nodes
-```
-
-## 4) Deploy Kubernetes Apps
-
-```powershell
-./scripts/deploy-k8s-apps.ps1 `
-  -OdooDbPassword "ChangeMeSecurePassword123!" `
-  -MoodleDbPassword "ChangeMeSecurePassword456!"
-```
-
-Or use the Bash helper:
+### Option A: Deploy with inline passwords
 
 ```bash
 ./scripts/deploy-k8s-apps.sh \
-  --odoo-db-password "ChangeMeSecurePassword123!" \
-  --moodle-db-password "ChangeMeSecurePassword456!"
+  --provision-infra \
+  --odoo-db-password "OdooPassword" \
+  --moodle-db-password "MoodlePassword" \
+  --osticket-db-password "MoodlePassword"
 ```
 
-Wait for readiness:
+### Option B: Deploy with AWS Secrets Manager
 
-```powershell
-kubectl rollout status deployment/odoo -n esm --timeout=300s
-kubectl rollout status deployment/moodle -n esm --timeout=300s
+```bash
+./scripts/deploy-k8s-apps.sh \
+  --provision-infra \
+  --odoo-secret-id "esm/prod/odoo-db-password" \
+  --moodle-secret-id "esm/prod/moodle-db-password" \
+  --osticket-secret-id "esm/prod/osticket-db-password"
 ```
 
-## 5) Verify Health
+## 3) Post-Deploy Verification
 
-Pods and services:
+### 3.1 Cluster health
 
-```powershell
-kubectl get pods -n esm
-kubectl get svc -n esm -o wide
-kubectl get endpoints -n esm
-```
-
-App logs:
-
-```powershell
-kubectl logs -n esm deployment/odoo --tail=100
-kubectl logs -n esm deployment/moodle --tail=100
-```
-
-## 6) Find Access Endpoints
-
-```powershell
-kubectl get svc -n esm odoo-public moodle-vpn
-```
-
-Expected:
-
-- `odoo-public`: public endpoint
-- `moodle-vpn`: private/internal endpoint
-
-Quick HTTP checks:
-
-```powershell
-$odooPub = (kubectl get svc odoo-public -n esm -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
-$moodleVpn = (kubectl get svc moodle-vpn -n esm -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
-curl.exe -s -o NUL -w "%{http_code}`n" http://$odooPub/web/login
-curl.exe -s -o NUL -w "%{http_code}`n" http://$moodleVpn/login/index.php
-```
-
-## 7) Runtime Operations
-
-Watch pods:
-
-```powershell
-kubectl get pods -n esm -w
-```
-
-Restart app rollout:
-
-```powershell
-kubectl rollout restart deployment/odoo -n esm
-kubectl rollout restart deployment/moodle -n esm
-```
-
-## 8) Teardown
-
-Delete k8s apps first:
-
-```powershell
-kubectl delete -k k8s
-```
-
-Destroy AWS infra:
-
-```powershell
-terraform -chdir=terraform destroy -auto-approve
-```
-
-## 9) Redeploy Later
-
-```powershell
-terraform -chdir=terraform init
-terraform -chdir=terraform apply -auto-approve
-aws eks update-kubeconfig --name esm-enterprise-prod-eks --region ap-southeast-1
-./scripts/deploy-k8s-apps.ps1 `
-  -OdooDbPassword "ChangeMeSecurePassword123!" `
-  -MoodleDbPassword "ChangeMeSecurePassword456!"
-kubectl get pods -n esm
-kubectl get svc -n esm -o wide
-```
-
-## 10) Troubleshooting
-
-`kubectl` cannot connect:
-
-```powershell
-aws eks update-kubeconfig --name esm-enterprise-prod-eks --region ap-southeast-1
-kubectl config current-context
+```bash
 kubectl get nodes
+kubectl get pods -A
+kubectl get pods -n odoo-public
+kubectl get pods -n odoo-private
+kubectl get pods -n moodle-private
+kubectl get pods -n osticket-private
 ```
 
-Pods are CrashLoopBackOff:
+### 3.2 Endpoints output
 
-```powershell
-kubectl describe pod <pod-name> -n esm
-kubectl logs <pod-name> -n esm --previous
+```bash
+terraform -chdir=terraform output application_access_urls
 ```
 
-Services have no external hostname yet:
+### 3.3 VPN for internal apps
 
-```powershell
-kubectl get svc -n esm -w
+```bash
+./scripts/generate-vpn-profile.sh --output "$HOME/Downloads/esm-vpn-config-fixed.ovpn"
 ```
 
-Odoo UI asset errors (500):
+Import profile into AWS VPN Client and connect.
 
-```powershell
-kubectl logs -n esm deployment/odoo --tail=200
-kubectl rollout restart deployment/odoo -n esm
+### 3.4 Connectivity checks
+
+```bash
+curl -I "http://$(terraform -chdir=terraform output -raw public_alb_dns_name)/"
 ```
 
-Moodle shows installer page:
+Internal examples (after VPN connect):
 
-- App is reachable but initial app setup is incomplete.
-- Continue Moodle web installer flow (`/install.php`) or provide bootstrap automation later.
+```bash
+curl -I "http://odoo.internal.esm.local/"
+curl -I "http://moodle.internal.esm.local/"
+curl -I "http://osticket.internal.esm.local/"
+```
+
+## 4) Common Troubleshooting
+
+### Placeholder values appear in live deployment
+
+Cause: raw `kubectl apply -k k8s` was used.
+Fix: re-run `scripts/deploy-k8s-apps.sh` so placeholders are rendered.
+
+### VPN connects but internal domain is unreachable
+
+1. Re-generate profile after recreate.
+2. Reconnect VPN.
+3. Verify private DNS resolves:
+
+```bash
+nslookup odoo.internal.esm.local
+```
+
+### osTicket/Moodle/Odoo pods not ready
+
+```bash
+kubectl describe pod -n <namespace> <pod-name>
+kubectl logs -n <namespace> <pod-name> --tail=200
+```
+
+## 5) Safe Teardown (Cost Control)
+
+Recommended full cleanup:
+
+```bash
+./scripts/destroy-everything.sh
+```
+
+What it does:
+- deletes Kubernetes resources first (to reduce ALB/NLB dependency issues)
+- optionally removes known RDS final snapshots
+- runs `terraform destroy -auto-approve`
+
+Optional flags:
+
+```bash
+./scripts/destroy-everything.sh --skip-k8s
+./scripts/destroy-everything.sh --skip-terraform
+./scripts/destroy-everything.sh --skip-snapshot-cleanup
+```
+
+## 6) Rebuild Later
+
+When you want to run demo again:
+
+```bash
+./scripts/rebuild-from-scratch.sh \
+  --odoo-db-password "OdooPassword" \
+  --moodle-db-password "MoodlePassword" \
+  --osticket-db-password "MoodlePassword"
+```
+
+This wrapper tears down first, then deploys infra + apps.

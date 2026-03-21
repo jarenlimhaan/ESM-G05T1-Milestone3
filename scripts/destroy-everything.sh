@@ -7,18 +7,20 @@ Usage:
   ./scripts/destroy-everything.sh \
     [--terraform-dir terraform] \
     [--k8s-dir k8s] \
-    [--namespace esm] \
+    [--namespace odoo-public] \
     [--skip-k8s] \
     [--skip-terraform] \
-    [--skip-snapshot-cleanup]
+    [--skip-snapshot-cleanup] \
+    [--skip-backup-cleanup]
 
 Options:
   --terraform-dir         Terraform directory (default: terraform).
   --k8s-dir               Kubernetes manifests directory (default: k8s).
-  --namespace             Kubernetes namespace (default: esm).
+  --namespace             Kubernetes namespace (legacy option, default: odoo-public).
   --skip-k8s              Skip Kubernetes cleanup.
   --skip-terraform        Skip Terraform destroy.
   --skip-snapshot-cleanup Skip pre-delete of known final snapshot names.
+  --skip-backup-cleanup   Skip deleting AWS Backup recovery points.
   -h, --help              Show this help.
 EOF
 }
@@ -35,10 +37,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 TERRAFORM_DIR="${REPO_ROOT}/terraform"
 K8S_DIR="${REPO_ROOT}/k8s"
-NAMESPACE="esm"
+NAMESPACE="odoo-public"
 SKIP_K8S="false"
 SKIP_TERRAFORM="false"
 SKIP_SNAPSHOT_CLEANUP="false"
+SKIP_BACKUP_CLEANUP="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -64,6 +67,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-snapshot-cleanup)
       SKIP_SNAPSHOT_CLEANUP="true"
+      shift
+      ;;
+    --skip-backup-cleanup)
+      SKIP_BACKUP_CLEANUP="true"
       shift
       ;;
     -h|--help)
@@ -104,7 +111,10 @@ if [[ "${SKIP_K8S}" != "true" ]]; then
   fi
 
   # Explicitly remove LB services to avoid orphan NLB dependencies at destroy time.
-  kubectl delete svc odoo-public moodle-vpn odoo-vpn moodle-public -n "${NAMESPACE}" --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete ingress odoo-public -n odoo-public --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete ingress odoo-internal -n odoo-private --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete ingress moodle-internal -n moodle-private --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete ingress osticket-internal -n osticket-private --ignore-not-found >/dev/null 2>&1 || true
   kubectl delete -k "${K8S_DIR}" --ignore-not-found=true >/dev/null 2>&1 || true
 fi
 
@@ -129,6 +139,30 @@ if [[ "${SKIP_SNAPSHOT_CLEANUP}" != "true" ]]; then
       echo "Requested delete for snapshot: ${snapshot}"
     fi
   done
+fi
+
+if [[ "${SKIP_BACKUP_CLEANUP}" != "true" ]]; then
+  BACKUP_VAULT_ARN="$(terraform -chdir="${TERRAFORM_DIR}" output -raw backup_vault_arn 2>/dev/null || true)"
+  if [[ -n "${BACKUP_VAULT_ARN}" ]]; then
+    BACKUP_VAULT_NAME="${BACKUP_VAULT_ARN##*:}"
+    echo "Deleting recovery points in backup vault ${BACKUP_VAULT_NAME}..."
+    while IFS= read -r RP_ARN; do
+      if [[ -n "${RP_ARN}" ]]; then
+        aws backup delete-recovery-point \
+          --region "${AWS_REGION}" \
+          --backup-vault-name "${BACKUP_VAULT_NAME}" \
+          --recovery-point-arn "${RP_ARN}" \
+          >/dev/null || true
+        echo "Requested delete for recovery point: ${RP_ARN}"
+      fi
+    done < <(
+      aws backup list-recovery-points-by-backup-vault \
+        --region "${AWS_REGION}" \
+        --backup-vault-name "${BACKUP_VAULT_NAME}" \
+        --query 'RecoveryPoints[].RecoveryPointArn' \
+        --output text 2>/dev/null | tr '\t' '\n'
+    )
+  fi
 fi
 
 echo "Running Terraform destroy..."

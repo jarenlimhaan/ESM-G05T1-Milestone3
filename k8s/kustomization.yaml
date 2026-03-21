@@ -6,16 +6,21 @@ resources:
   - system/metrics-server.yaml
   - system/cluster-autoscaler.yaml
   - storage/odoo-storage.yaml
+  - storage/odoo-storage-public.yaml
   - odoo/deployment.yaml
   - odoo/deployment-public.yaml
   - odoo/public-gateway-configmap.yaml
   - odoo/public-gateway-deployment.yaml
+  - odoo/private-gateway-configmap.yaml
+  - odoo/private-gateway-deployment.yaml
   - odoo/hpa.yaml
   - odoo/service.yaml
   - odoo/service-public-backend.yaml
+  - odoo/service-private-backend.yaml
   - odoo/service-public.yaml
-  - odoo/service-vpn.yaml
   - moodle/deployment.yaml
   - moodle/hpa.yaml
   - moodle/service.yaml
-  - moodle/service-vpn.yaml
+  - osticket/deployment.yaml
+  - osticket/hpa.yaml
+  - osticket/service.yaml

@@ -159,9 +159,10 @@ output "alb_arn" {
 output "application_access_urls" {
   description = "Access URLs for applications"
   value = {
-    odoo_public     = "http://${module.alb_public.alb_dns_name}/odoo"
-    odoo_internal   = "http://${module.alb_internal.alb_dns_name}/odoo"
-    moodle_internal = "http://${module.alb_internal.alb_dns_name}/moodle"
+    odoo_public       = module.dns.odoo_public_fqdn != null ? "http://${module.dns.odoo_public_fqdn}" : "http://${module.alb_public.alb_dns_name}"
+    odoo_internal     = module.dns.odoo_internal_fqdn != null ? "http://${module.dns.odoo_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/odoo"
+    moodle_internal   = module.dns.moodle_internal_fqdn != null ? "http://${module.dns.moodle_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/moodle"
+    osticket_internal = module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/osticket"
   }
 }
 
@@ -261,8 +262,9 @@ To connect to the VPN:
 4. Enter your VPN credentials when prompted
 
 5. After connection, access applications:
-   - Odoo Internal:  http://${module.alb_internal.alb_dns_name}/odoo
-   - Moodle Internal: http://${module.alb_internal.alb_dns_name}/moodle
+   - Odoo Internal:  ${module.dns.odoo_internal_fqdn != null ? "http://${module.dns.odoo_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/odoo"}
+   - Moodle Internal: ${module.dns.moodle_internal_fqdn != null ? "http://${module.dns.moodle_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/moodle"}
+   - osTicket Internal: ${module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/osticket"}
 EOT
 }
 
@@ -346,6 +348,11 @@ output "moodle_internal_dns_name" {
   value       = module.dns.moodle_internal_fqdn
 }
 
+output "osticket_internal_dns_name" {
+  description = "Route 53 DNS name for internal osTicket"
+  value       = module.dns.osticket_internal_fqdn
+}
+
 # ==============================================================================
 # CloudTrail Outputs
 # ==============================================================================
@@ -391,12 +398,14 @@ CONTAINER PLATFORM:
 LOAD BALANCING:
   Public ALB DNS: ${module.alb_public.alb_dns_name}
   Internal ALB DNS: ${module.alb_internal.alb_dns_name}
-  Odoo Public URL: http://${module.alb_public.alb_dns_name}/odoo
-  Odoo Internal URL: http://${module.alb_internal.alb_dns_name}/odoo
-  Moodle Internal URL: http://${module.alb_internal.alb_dns_name}/moodle
+  Odoo Public URL: ${module.dns.odoo_public_fqdn != null ? "http://${module.dns.odoo_public_fqdn}" : "http://${module.alb_public.alb_dns_name}"}
+  Odoo Internal URL: ${module.dns.odoo_internal_fqdn != null ? "http://${module.dns.odoo_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/odoo"}
+  Moodle Internal URL: ${module.dns.moodle_internal_fqdn != null ? "http://${module.dns.moodle_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/moodle"}
+  osTicket Internal URL: ${module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/osticket"}
   Odoo Public DNS (Route53): ${coalesce(module.dns.odoo_public_fqdn, "not-configured")}
   Odoo Internal DNS (Route53): ${coalesce(module.dns.odoo_internal_fqdn, "not-configured")}
   Moodle Internal DNS (Route53): ${coalesce(module.dns.moodle_internal_fqdn, "not-configured")}
+  osTicket Internal DNS (Route53): ${coalesce(module.dns.osticket_internal_fqdn, "not-configured")}
 
 DATABASES:
   Odoo PostgreSQL: ${module.rds.odoo_endpoint} (Port ${module.rds.odoo_port})
@@ -436,9 +445,10 @@ AUDIT:
 
 3. VERIFY APPLICATIONS:
    - Check kubectl get pods -n esm
-   - Access Odoo Public: http://${module.alb_public.alb_dns_name}/odoo
-   - Access Odoo Internal: http://${module.alb_internal.alb_dns_name}/odoo
-   - Access Moodle Internal: http://${module.alb_internal.alb_dns_name}/moodle
+   - Access Odoo Public: ${module.dns.odoo_public_fqdn != null ? "http://${module.dns.odoo_public_fqdn}" : "http://${module.alb_public.alb_dns_name}"}
+   - Access Odoo Internal: ${module.dns.odoo_internal_fqdn != null ? "http://${module.dns.odoo_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/odoo"}
+   - Access Moodle Internal: ${module.dns.moodle_internal_fqdn != null ? "http://${module.dns.moodle_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/moodle"}
+   - Access osTicket Internal: ${module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/osticket"}
 
 4. VERIFY BACKUPS:
    - Navigate to AWS Backup console

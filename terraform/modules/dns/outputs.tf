@@ -22,3 +22,8 @@ output "moodle_internal_fqdn" {
   description = "Internal Moodle DNS record"
   value       = length(aws_route53_record.moodle_internal) > 0 ? aws_route53_record.moodle_internal[0].fqdn : null
 }
+
+output "osticket_internal_fqdn" {
+  description = "Internal osTicket DNS record"
+  value       = length(aws_route53_record.osticket_internal) > 0 ? aws_route53_record.osticket_internal[0].fqdn : null
+}

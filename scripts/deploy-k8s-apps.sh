@@ -5,24 +5,40 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/deploy-k8s-apps.sh \
-    --odoo-db-password "<password>" \
-    --moodle-db-password "<password>" \
+    [--odoo-db-password "<password>"] \
+    [--moodle-db-password "<password>"] \
+    [--osticket-db-password "<password>"] \
+    [--odoo-secret-id "<aws-secretsmanager-id>"] \
+    [--moodle-secret-id "<aws-secretsmanager-id>"] \
+    [--osticket-secret-id "<aws-secretsmanager-id>"] \
     [--terraform-dir terraform] \
     [--aws-region ap-southeast-1] \
     [--odoo-db-user odoo_admin] \
     [--moodle-db-user moodle_admin] \
     [--moodle-db-name moodledb] \
+    [--osticket-db-host "<host>"] \
+    [--osticket-db-user moodle_admin] \
+    [--osticket-db-name osticketdb] \
     [--keep-rendered-manifests] \
     [--provision-infra]
 
 Options:
-  --odoo-db-password     Required. Password for secret/odoo-db.
-  --moodle-db-password   Required. Password for secret/moodle-db.
+  --odoo-db-password     Odoo password for secret/odoo-db.
+  --moodle-db-password   Moodle password for secret/moodle-db.
+  --osticket-db-password Optional. Password for secret/osticket-db.
+                         Defaults to --moodle-db-password value.
+  --odoo-secret-id       AWS Secrets Manager secret id for Odoo DB password.
+  --moodle-secret-id     AWS Secrets Manager secret id for Moodle DB password.
+  --osticket-secret-id   AWS Secrets Manager secret id for osTicket DB password.
+                         If omitted, Moodle secret/password is reused.
   --terraform-dir        Terraform directory (default: terraform).
   --aws-region           AWS region. If omitted, read from Terraform output.
   --odoo-db-user         Odoo DB user (default: odoo_admin).
   --moodle-db-user       Moodle DB user (default: moodle_admin).
   --moodle-db-name       Moodle DB name (default: moodledb).
+  --osticket-db-host     osTicket DB host. Defaults to Moodle DB host output.
+  --osticket-db-user     osTicket DB user (default: moodle_admin).
+  --osticket-db-name     osTicket DB name (default: osticketdb).
   --keep-rendered-manifests
                          Keep rendered temporary manifests for inspection.
   --provision-infra      Run terraform init + apply before kubectl apply.
@@ -48,6 +64,13 @@ ODOO_DB_PASSWORD=""
 MOODLE_DB_USER="moodle_admin"
 MOODLE_DB_PASSWORD=""
 MOODLE_DB_NAME="moodledb"
+OSTICKET_DB_HOST=""
+OSTICKET_DB_USER="moodle_admin"
+OSTICKET_DB_PASSWORD=""
+OSTICKET_DB_NAME="osticketdb"
+ODOO_SECRET_ID=""
+MOODLE_SECRET_ID=""
+OSTICKET_SECRET_ID=""
 KEEP_RENDERED_MANIFESTS="false"
 PROVISION_INFRA="false"
 RENDER_DIR=""
@@ -82,6 +105,34 @@ while [[ $# -gt 0 ]]; do
       MOODLE_DB_NAME="$2"
       shift 2
       ;;
+    --osticket-db-host)
+      OSTICKET_DB_HOST="$2"
+      shift 2
+      ;;
+    --osticket-db-user)
+      OSTICKET_DB_USER="$2"
+      shift 2
+      ;;
+    --osticket-db-password)
+      OSTICKET_DB_PASSWORD="$2"
+      shift 2
+      ;;
+    --osticket-db-name)
+      OSTICKET_DB_NAME="$2"
+      shift 2
+      ;;
+    --odoo-secret-id)
+      ODOO_SECRET_ID="$2"
+      shift 2
+      ;;
+    --moodle-secret-id)
+      MOODLE_SECRET_ID="$2"
+      shift 2
+      ;;
+    --osticket-secret-id)
+      OSTICKET_SECRET_ID="$2"
+      shift 2
+      ;;
     --keep-rendered-manifests)
       KEEP_RENDERED_MANIFESTS="true"
       shift
@@ -101,12 +152,6 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-if [[ -z "${ODOO_DB_PASSWORD}" || -z "${MOODLE_DB_PASSWORD}" ]]; then
-  echo "Error: --odoo-db-password and --moodle-db-password are required." >&2
-  usage
-  exit 1
-fi
 
 if [[ "${TERRAFORM_DIR}" != /* ]]; then
   TERRAFORM_DIR="${REPO_ROOT}/${TERRAFORM_DIR}"
@@ -145,9 +190,32 @@ EFS_ACCESS_POINT_ID="$(terraform -chdir="${TERRAFORM_DIR}" output -raw efs_odoo_
 
 ODOO_DB_HOST="${ODOO_DB_ENDPOINT%%:*}"
 MOODLE_DB_HOST="${MOODLE_DB_ENDPOINT%%:*}"
+if [[ -z "${OSTICKET_DB_HOST}" ]]; then
+  OSTICKET_DB_HOST="${MOODLE_DB_HOST}"
+fi
 
 if [[ -z "${AWS_REGION}" ]]; then
   AWS_REGION="$(terraform -chdir="${TERRAFORM_DIR}" output -raw aws_region)"
+fi
+
+if [[ -n "${ODOO_SECRET_ID}" ]]; then
+  ODOO_DB_PASSWORD="$(aws --region "${AWS_REGION}" secretsmanager get-secret-value --secret-id "${ODOO_SECRET_ID}" --query SecretString --output text)"
+fi
+if [[ -n "${MOODLE_SECRET_ID}" ]]; then
+  MOODLE_DB_PASSWORD="$(aws --region "${AWS_REGION}" secretsmanager get-secret-value --secret-id "${MOODLE_SECRET_ID}" --query SecretString --output text)"
+fi
+if [[ -n "${OSTICKET_SECRET_ID}" ]]; then
+  OSTICKET_DB_PASSWORD="$(aws --region "${AWS_REGION}" secretsmanager get-secret-value --secret-id "${OSTICKET_SECRET_ID}" --query SecretString --output text)"
+fi
+
+if [[ -z "${OSTICKET_DB_PASSWORD}" ]]; then
+  OSTICKET_DB_PASSWORD="${MOODLE_DB_PASSWORD}"
+fi
+
+if [[ -z "${ODOO_DB_PASSWORD}" || -z "${MOODLE_DB_PASSWORD}" ]]; then
+  echo "Error: provide passwords with --*-db-password or Secret IDs with --odoo-secret-id/--moodle-secret-id." >&2
+  usage
+  exit 1
 fi
 
 echo "Updating kubeconfig for cluster ${CLUSTER_NAME} in ${AWS_REGION}..."
@@ -160,6 +228,7 @@ echo "Rendering manifests with current Terraform outputs..."
 export ODOO_DB_HOST ODOO_DB_USER ODOO_DB_PASSWORD
 export ODOO_DB_NAME
 export MOODLE_DB_HOST MOODLE_DB_USER MOODLE_DB_NAME MOODLE_DB_PASSWORD
+export OSTICKET_DB_HOST OSTICKET_DB_USER OSTICKET_DB_NAME OSTICKET_DB_PASSWORD
 export EFS_ID EFS_ACCESS_POINT_ID
 export CLUSTER_NAME CLUSTER_AUTOSCALER_ROLE_ARN EKS_NODE_GROUP_ASG_NAME
 export EKS_NODE_COUNT_MIN EKS_NODE_COUNT_MAX
@@ -174,6 +243,10 @@ while IFS= read -r -d '' file; do
     s/__MOODLE_DB_USER__/$ENV{MOODLE_DB_USER}/g;
     s/__MOODLE_DB_NAME__/$ENV{MOODLE_DB_NAME}/g;
     s/__MOODLE_DB_PASSWORD__/$ENV{MOODLE_DB_PASSWORD}/g;
+    s/__OSTICKET_DB_HOST__/$ENV{OSTICKET_DB_HOST}/g;
+    s/__OSTICKET_DB_USER__/$ENV{OSTICKET_DB_USER}/g;
+    s/__OSTICKET_DB_NAME__/$ENV{OSTICKET_DB_NAME}/g;
+    s/__OSTICKET_DB_PASSWORD__/$ENV{OSTICKET_DB_PASSWORD}/g;
     s/__EFS_ID__/$ENV{EFS_ID}/g;
     s/__EFS_ACCESS_POINT_ID__/$ENV{EFS_ACCESS_POINT_ID}/g;
     s/__CLUSTER_NAME__/$ENV{CLUSTER_NAME}/g;
@@ -193,19 +266,23 @@ fi
 echo "Applying Kubernetes manifests..."
 kubectl apply -k "${RENDER_DIR}"
 
-echo "Removing retired services (moodle-public)..."
-kubectl delete svc moodle-public -n esm --ignore-not-found
-
 echo "Restarting deployments..."
-kubectl rollout restart deployment/odoo-private -n esm
-kubectl rollout restart deployment/odoo-public -n esm
-kubectl rollout restart deployment/moodle -n esm
-kubectl rollout status deployment/odoo-private -n esm --timeout=300s
-kubectl rollout status deployment/odoo-public -n esm --timeout=300s
-kubectl rollout status deployment/moodle -n esm --timeout=300s
+kubectl rollout restart deployment/odoo-private -n odoo-private
+kubectl rollout restart deployment/odoo-private-gateway -n odoo-private
+kubectl rollout restart deployment/odoo-public -n odoo-public
+kubectl rollout restart deployment/moodle -n moodle-private
+kubectl rollout restart deployment/osticket -n osticket-private
+kubectl rollout status deployment/odoo-private -n odoo-private --timeout=300s
+kubectl rollout status deployment/odoo-private-gateway -n odoo-private --timeout=300s
+kubectl rollout status deployment/odoo-public -n odoo-public --timeout=300s
+kubectl rollout status deployment/moodle -n moodle-private --timeout=300s
+kubectl rollout status deployment/osticket -n osticket-private --timeout=300s
 
 echo "Current pod status:"
-kubectl get pods -n esm
+kubectl get pods -n odoo-public
+kubectl get pods -n odoo-private
+kubectl get pods -n moodle-private
+kubectl get pods -n osticket-private
 
 if [[ "${KEEP_RENDERED_MANIFESTS}" == "true" ]]; then
   echo "Rendered manifests kept at: ${RENDER_DIR}"

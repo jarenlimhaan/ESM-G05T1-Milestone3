@@ -33,6 +33,11 @@ output "target_group_arn_moodle" {
   value       = aws_lb_target_group.moodle.arn
 }
 
+output "target_group_arn_osticket" {
+  description = "ARN of the osTicket target group"
+  value       = aws_lb_target_group.osticket.arn
+}
+
 output "listener_arn" {
   description = "ARN of the HTTP listener"
   value       = aws_lb_listener.http.arn

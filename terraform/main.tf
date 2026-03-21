@@ -21,6 +21,18 @@ locals {
   )
 
   project_prefix = "${var.project_name}-${var.environment}"
+
+  has_public_zone_name  = trimspace(var.public_route53_zone_name) != ""
+  has_private_zone_name = trimspace(var.private_route53_zone_name) != ""
+
+  use_public_host_routing   = var.create_public_route53_zone && local.has_public_zone_name
+  use_internal_host_routing = var.create_private_route53_zone && local.has_private_zone_name
+
+  odoo_public_fqdn = "${var.odoo_public_record_name}.${var.public_route53_zone_name}"
+
+  odoo_internal_fqdn     = "${var.odoo_internal_record_name}.${var.private_route53_zone_name}"
+  moodle_internal_fqdn   = "${var.moodle_internal_record_name}.${var.private_route53_zone_name}"
+  osticket_internal_fqdn = "${var.osticket_internal_record_name}.${var.private_route53_zone_name}"
 }
 
 # ==============================================================================
@@ -239,8 +251,15 @@ module "alb_public" {
   alb_security_group_id = module.security_groups.public_alb_sg_id
 
   # Public LB
-  internal        = false
-  alb_name_suffix = "public"
+  internal            = false
+  alb_name_suffix     = "public"
+  node_group_asg_name = module.eks.node_group_autoscaling_group_name
+  odoo_node_port      = 30080
+  odoo_path_patterns  = ["/*"]
+  odoo_host_headers   = local.use_public_host_routing ? [local.odoo_public_fqdn] : []
+  enable_odoo         = true
+  enable_moodle       = false
+  enable_osticket     = false
 
   # Certificate
   certificate_arn = var.alb_certificate_arn
@@ -269,8 +288,21 @@ module "alb_internal" {
   alb_security_group_id = module.security_groups.internal_alb_sg_id
 
   # Internal LB
-  internal        = true
-  alb_name_suffix = "internal"
+  internal               = true
+  alb_name_suffix        = "internal"
+  node_group_asg_name    = module.eks.node_group_autoscaling_group_name
+  odoo_node_port         = 30081
+  odoo_path_patterns     = local.use_internal_host_routing ? ["/*"] : ["/odoo*", "/web*"]
+  odoo_host_headers      = local.use_internal_host_routing ? [local.odoo_internal_fqdn] : []
+  moodle_node_port       = 30082
+  moodle_path_patterns   = local.use_internal_host_routing ? ["/*"] : ["/moodle*"]
+  moodle_host_headers    = local.use_internal_host_routing ? [local.moodle_internal_fqdn] : []
+  osticket_node_port     = 30083
+  osticket_path_patterns = local.use_internal_host_routing ? ["/*"] : ["/osticket*"]
+  osticket_host_headers  = local.use_internal_host_routing ? [local.osticket_internal_fqdn] : []
+  enable_odoo            = true
+  enable_moodle          = true
+  enable_osticket        = true
 
   # Certificate
   certificate_arn = var.alb_certificate_arn
@@ -316,9 +348,10 @@ module "dns" {
   create_private_zone = var.create_private_route53_zone
   private_zone_name   = var.private_route53_zone_name
 
-  odoo_public_record_name     = var.odoo_public_record_name
-  odoo_internal_record_name   = var.odoo_internal_record_name
-  moodle_internal_record_name = var.moodle_internal_record_name
+  odoo_public_record_name       = var.odoo_public_record_name
+  odoo_internal_record_name     = var.odoo_internal_record_name
+  moodle_internal_record_name   = var.moodle_internal_record_name
+  osticket_internal_record_name = var.osticket_internal_record_name
 
   public_alb_dns_name   = module.alb_public.alb_dns_name
   public_alb_zone_id    = module.alb_public.alb_zone_id

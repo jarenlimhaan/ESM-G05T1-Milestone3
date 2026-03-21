@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: odoo-public
+  namespace: odoo-public
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: esm-public
+    alb.ingress.kubernetes.io/group.order: "10"
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /odoo
+            pathType: Prefix
+            backend:
+              service:
+                name: odoo-public
+                port:
+                  number: 80

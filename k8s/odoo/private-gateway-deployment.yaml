@@ -1,17 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: odoo-public-gateway
-  namespace: odoo-public
+  name: odoo-private-gateway
+  namespace: odoo-private
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: odoo-public-gateway
+      app: odoo-private-gateway
   template:
     metadata:
       labels:
-        app: odoo-public-gateway
+        app: odoo-private-gateway
     spec:
       containers:
         - name: nginx
@@ -25,4 +25,4 @@ spec:
       volumes:
         - name: nginx-config
           configMap:
-            name: odoo-public-nginx-config
+            name: odoo-private-nginx-config

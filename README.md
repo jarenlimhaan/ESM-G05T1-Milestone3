@@ -1,105 +1,127 @@
-# ESM Enterprise Platform
+﻿# ESM AWS + Kubernetes (School Project)
 
-Terraform provisions AWS infrastructure (VPC, EKS, RDS, EFS, VPN, ALB, monitoring).  
-Kubernetes manifests deploy Moodle and Odoo on EKS.
+This repository provisions AWS infrastructure with Terraform and deploys apps to EKS with Kubernetes manifests.
+
+## Architecture Summary
+
+- Public access:
+  - Odoo (public) at root path on public ALB domain.
+- Internal (VPN only):
+  - Odoo (internal), Moodle, and osTicket at root path on internal private DNS hostnames.
+- Infra:
+  - VPC, EKS, RDS (Postgres + MySQL), EFS, ALB (public/internal), VPN, WAF, Backup, Monitoring.
 
 ## Repo Layout
 
-```text
-.
-|-- terraform/             # AWS infrastructure
-|-- k8s/                   # Kubernetes manifests (apps)
-|-- scripts/
-|   |-- deploy-k8s-apps.ps1 # PowerShell helper deploy script
-|   `-- deploy-k8s-apps.sh  # Bash helper deploy script
-`-- DEPLOYMENT.md          # Full step-by-step runbook
-```
+- `terraform/` -> infrastructure provisioning
+- `k8s/` -> Kubernetes manifests (template placeholders)
+- `scripts/` -> deploy/teardown/VPN helper scripts
 
 ## Prerequisites
 
-- AWS CLI configured (`aws configure`)
-- Terraform installed
-- kubectl installed
-- IAM permissions for EKS, VPC, RDS, EFS, ELB, IAM, CloudWatch, SNS, Backup
+Install and configure:
 
-## Quick Start
+1. `aws` CLI (authenticated to your AWS account)
+2. `terraform`
+3. `kubectl`
+4. `bash` (Git Bash/WSL/macOS/Linux)
+5. `jq`, `perl` (required by scripts)
 
-From repo root:
-
-```powershell
-# 1) Create AWS infrastructure
-terraform -chdir=terraform init
-terraform -chdir=terraform apply -auto-approve
-
-# 2) Configure kubectl for EKS
-aws eks update-kubeconfig --name esm-enterprise-prod-eks --region ap-southeast-1
-
-# 3) Deploy apps (renders fresh Terraform outputs into manifests)
-./scripts/deploy-k8s-apps.ps1 `
-  -OdooDbPassword "ChangeMeSecurePassword123!" `
-  -MoodleDbPassword "ChangeMeSecurePassword456!"
-
-# 4) Verify
-kubectl get pods -n esm
-kubectl get svc -n esm -o wide
-```
-
-## Access Endpoints
-
-```powershell
-kubectl get svc -n esm odoo-public odoo-vpn moodle-vpn
-```
-
-- `odoo-public`: internet-facing NLB endpoint (public Odoo routes)
-- `odoo-vpn`: internal NLB endpoint for Odoo admin/backend
-- `moodle-vpn`: internal NLB endpoint (for VPN/private routing)
-
-## Pod Health Commands
-
-```powershell
-kubectl get pods -n esm
-kubectl get pods -n esm -w
-kubectl get pods -n esm -o wide
-kubectl logs -n esm deployment/odoo --tail=100
-kubectl logs -n esm deployment/moodle --tail=100
-```
-
-## Tear Down
-
-```powershell
-# Remove apps
-kubectl delete -k k8s
-
-# Destroy AWS infrastructure
-terraform -chdir=terraform destroy -auto-approve
-```
-
-## Bring It Back Later
-
-```powershell
-terraform -chdir=terraform init
-terraform -chdir=terraform apply -auto-approve
-aws eks update-kubeconfig --name esm-enterprise-prod-eks --region ap-southeast-1
-./scripts/deploy-k8s-apps.ps1 `
-  -OdooDbPassword "ChangeMeSecurePassword123!" `
-  -MoodleDbPassword "ChangeMeSecurePassword456!"
-```
-
-For full deployment and troubleshooting flow, use `DEPLOYMENT.md`.
-
-## Helper Script (Bash)
+Validate quickly:
 
 ```bash
-./scripts/deploy-k8s-apps.sh \
-  --odoo-db-password "ChangeMeSecurePassword123!" \
-  --moodle-db-password "ChangeMeSecurePassword456!"
+aws sts get-caller-identity
+terraform -version
+kubectl version --client
 ```
 
-If you also want the script to run Terraform provisioning first:
+## Quick Start (From Scratch)
+
+### 1. (Optional) Tear Down Existing Stack First
+
+```bash
+./scripts/destroy-everything.sh
+```
+
+### 2. Deploy Infra + Kubernetes Apps
+
+Use direct DB passwords:
 
 ```bash
 ./scripts/deploy-k8s-apps.sh \
   --provision-infra \
-  --odoo-db-password "ChangeMeSecurePassword123!" \
-  --moodle-db-password "ChangeMeSecurePassword456!"
+  --odoo-db-password "OdooPassword" \
+  --moodle-db-password "MoodlePassword" \
+  --osticket-db-password "MoodlePassword"
 ```
+
+Or use AWS Secrets Manager IDs:
+
+```bash
+./scripts/deploy-k8s-apps.sh \
+  --provision-infra \
+  --odoo-secret-id "esm/prod/odoo-db-password" \
+  --moodle-secret-id "esm/prod/moodle-db-password" \
+  --osticket-secret-id "esm/prod/osticket-db-password"
+```
+
+### 3. Get Endpoints
+
+```bash
+terraform -chdir=terraform output application_access_urls
+```
+
+### 4. Generate VPN Profile (Internal Access)
+
+```bash
+./scripts/generate-vpn-profile.sh --output "$HOME/Downloads/esm-vpn-config-fixed.ovpn"
+```
+
+Import the generated `.ovpn` into AWS VPN Client, connect, then access internal hosts.
+
+## Day-2 Operations
+
+### Redeploy Kubernetes manifests after changes
+
+```bash
+./scripts/deploy-k8s-apps.sh \
+  --odoo-db-password "OdooPassword" \
+  --moodle-db-password "MoodlePassword" \
+  --osticket-db-password "MoodlePassword"
+```
+
+### Sync K8s secrets from AWS Secrets Manager
+
+```bash
+./scripts/sync-k8s-secrets-from-aws.sh \
+  --region ap-southeast-1 \
+  --odoo-secret-id esm/prod/odoo-db-password \
+  --moodle-secret-id esm/prod/moodle-db-password \
+  --osticket-secret-id esm/prod/osticket-db-password
+```
+
+## Teardown
+
+Full cleanup:
+
+```bash
+./scripts/destroy-everything.sh
+```
+
+Infra-only cleanup:
+
+```bash
+./scripts/destroy-everything.sh --skip-k8s
+```
+
+K8s-only cleanup:
+
+```bash
+./scripts/destroy-everything.sh --skip-terraform
+```
+
+## Notes
+
+- Use `scripts/deploy-k8s-apps.sh` (not raw `kubectl apply -k k8s`) because manifests contain placeholders and must be rendered first.
+- If you destroy/recreate often, endpoints and VPN configuration can change. Re-generate VPN profile after each fresh create.
+- For school demo cost control: destroy stack immediately when not in use.

@@ -8,7 +8,8 @@ locals {
   # ALB name max length is 32.
   lb_name = substr("${var.project_name}-${var.environment}-${var.alb_name_suffix}-alb", 0, 32)
   # Target group name max length is 32.
-  tg_prefix = substr("${var.project_name}-${var.environment}-${var.alb_name_suffix}", 0, 22)
+  alb_short = var.internal ? "in" : "pu"
+  tg_base   = substr("${var.project_name}-${var.environment}-${local.alb_short}", 0, 22)
 }
 
 # ==============================================================================
@@ -57,19 +58,19 @@ resource "aws_lb" "main" {
 # Target groups for Odoo and Moodle services
 
 resource "aws_lb_target_group" "odoo" {
-  name        = "${local.tg_prefix}-odoo-tg"
-  port        = 80
+  name        = "${local.tg_base}-odoo-np"
+  port        = var.odoo_node_port
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
-  target_type = "ip" # IP mode for Kubernetes pods
+  target_type = "instance"
 
   # Health check configuration
   health_check {
     enabled             = true
     healthy_threshold   = 3
     interval            = 30
-    matcher             = "200"
-    path                = "/web/health"
+    matcher             = "200-399"
+    path                = "/"
     port                = "traffic-port"
     protocol            = "HTTP"
     timeout             = 5
@@ -86,6 +87,10 @@ resource "aws_lb_target_group" "odoo" {
   # Deregistration delay
   deregistration_delay = 300 # 5 minutes
 
+  lifecycle {
+    create_before_destroy = true
+  }
+
   tags = merge(
     var.common_tags,
     {
@@ -95,18 +100,18 @@ resource "aws_lb_target_group" "odoo" {
 }
 
 resource "aws_lb_target_group" "moodle" {
-  name        = "${local.tg_prefix}-moodle-tg"
-  port        = 80
+  name        = "${local.tg_base}-moodle-np"
+  port        = var.moodle_node_port
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
-  target_type = "ip" # IP mode for Kubernetes pods
+  target_type = "instance"
 
   # Health check configuration
   health_check {
     enabled             = true
     healthy_threshold   = 3
     interval            = 30
-    matcher             = "200"
+    matcher             = "200-399"
     path                = "/login/index.php" # Moodle health check path
     port                = "traffic-port"
     protocol            = "HTTP"
@@ -124,10 +129,53 @@ resource "aws_lb_target_group" "moodle" {
   # Deregistration delay
   deregistration_delay = 300 # 5 minutes
 
+  lifecycle {
+    create_before_destroy = true
+  }
+
   tags = merge(
     var.common_tags,
     {
       Name = "${var.project_name}-${var.environment}-moodle-tg"
+    }
+  )
+}
+
+resource "aws_lb_target_group" "osticket" {
+  name        = "${local.tg_base}-ostk-np"
+  port        = var.osticket_node_port
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "instance"
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 3
+    interval            = 30
+    matcher             = "200-399"
+    path                = "/"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 3
+  }
+
+  stickiness {
+    type            = "lb_cookie"
+    cookie_duration = 86400
+    enabled         = true
+  }
+
+  deregistration_delay = 300
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name = "${var.project_name}-${var.environment}-osticket-tg"
     }
   )
 }
@@ -161,6 +209,7 @@ resource "aws_lb_listener" "http" {
 # Route traffic to Odoo and Moodle based on path
 
 resource "aws_lb_listener_rule" "odoo" {
+  count        = var.enable_odoo ? 1 : 0
   listener_arn = aws_lb_listener.http.arn
   priority     = 100
 
@@ -171,7 +220,16 @@ resource "aws_lb_listener_rule" "odoo" {
 
   condition {
     path_pattern {
-      values = ["/odoo*"]
+      values = var.odoo_path_patterns
+    }
+  }
+
+  dynamic "condition" {
+    for_each = length(var.odoo_host_headers) > 0 ? [1] : []
+    content {
+      host_header {
+        values = var.odoo_host_headers
+      }
     }
   }
 
@@ -179,6 +237,7 @@ resource "aws_lb_listener_rule" "odoo" {
 }
 
 resource "aws_lb_listener_rule" "moodle" {
+  count        = var.enable_moodle ? 1 : 0
   listener_arn = aws_lb_listener.http.arn
   priority     = 200
 
@@ -189,7 +248,44 @@ resource "aws_lb_listener_rule" "moodle" {
 
   condition {
     path_pattern {
-      values = ["/moodle*"]
+      values = var.moodle_path_patterns
+    }
+  }
+
+  dynamic "condition" {
+    for_each = length(var.moodle_host_headers) > 0 ? [1] : []
+    content {
+      host_header {
+        values = var.moodle_host_headers
+      }
+    }
+  }
+
+  tags = var.common_tags
+}
+
+resource "aws_lb_listener_rule" "osticket" {
+  count        = var.enable_osticket ? 1 : 0
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 300
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.osticket.arn
+  }
+
+  condition {
+    path_pattern {
+      values = var.osticket_path_patterns
+    }
+  }
+
+  dynamic "condition" {
+    for_each = length(var.osticket_host_headers) > 0 ? [1] : []
+    content {
+      host_header {
+        values = var.osticket_host_headers
+      }
     }
   }
 
@@ -224,7 +320,7 @@ resource "aws_lb_listener" "https" {
 
 # HTTPS listener rules (only created if certificate is provided)
 resource "aws_lb_listener_rule" "odoo_https" {
-  count        = var.certificate_arn != "" ? 1 : 0
+  count        = var.certificate_arn != "" && var.enable_odoo ? 1 : 0
   listener_arn = aws_lb_listener.https[0].arn
   priority     = 100
 
@@ -235,7 +331,16 @@ resource "aws_lb_listener_rule" "odoo_https" {
 
   condition {
     path_pattern {
-      values = ["/odoo*"]
+      values = var.odoo_path_patterns
+    }
+  }
+
+  dynamic "condition" {
+    for_each = length(var.odoo_host_headers) > 0 ? [1] : []
+    content {
+      host_header {
+        values = var.odoo_host_headers
+      }
     }
   }
 
@@ -243,7 +348,7 @@ resource "aws_lb_listener_rule" "odoo_https" {
 }
 
 resource "aws_lb_listener_rule" "moodle_https" {
-  count        = var.certificate_arn != "" ? 1 : 0
+  count        = var.certificate_arn != "" && var.enable_moodle ? 1 : 0
   listener_arn = aws_lb_listener.https[0].arn
   priority     = 200
 
@@ -254,11 +359,67 @@ resource "aws_lb_listener_rule" "moodle_https" {
 
   condition {
     path_pattern {
-      values = ["/moodle*"]
+      values = var.moodle_path_patterns
+    }
+  }
+
+  dynamic "condition" {
+    for_each = length(var.moodle_host_headers) > 0 ? [1] : []
+    content {
+      host_header {
+        values = var.moodle_host_headers
+      }
     }
   }
 
   tags = var.common_tags
+}
+
+resource "aws_lb_listener_rule" "osticket_https" {
+  count        = var.certificate_arn != "" && var.enable_osticket ? 1 : 0
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = 300
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.osticket.arn
+  }
+
+  condition {
+    path_pattern {
+      values = var.osticket_path_patterns
+    }
+  }
+
+  dynamic "condition" {
+    for_each = length(var.osticket_host_headers) > 0 ? [1] : []
+    content {
+      host_header {
+        values = var.osticket_host_headers
+      }
+    }
+  }
+
+  tags = var.common_tags
+}
+
+# Register EKS worker nodes in each enabled target group.
+resource "aws_autoscaling_attachment" "odoo" {
+  count                  = var.enable_odoo ? 1 : 0
+  autoscaling_group_name = var.node_group_asg_name
+  lb_target_group_arn    = aws_lb_target_group.odoo.arn
+}
+
+resource "aws_autoscaling_attachment" "moodle" {
+  count                  = var.enable_moodle ? 1 : 0
+  autoscaling_group_name = var.node_group_asg_name
+  lb_target_group_arn    = aws_lb_target_group.moodle.arn
+}
+
+resource "aws_autoscaling_attachment" "osticket" {
+  count                  = var.enable_osticket ? 1 : 0
+  autoscaling_group_name = var.node_group_asg_name
+  lb_target_group_arn    = aws_lb_target_group.osticket.arn
 }
 
 # ==============================================================================

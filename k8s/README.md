@@ -9,9 +9,11 @@ This folder contains Kubernetes manifests for the application workloads and the 
 - `storage/odoo-storage.yaml`: Static EFS PV and PVC for Odoo.
 - `odoo/`: Odoo deployment and service.
 - `moodle/`: Moodle deployment and service.
-- `odoo/service-public.yaml`: internet-facing NLB service for public Odoo routes.
-- `odoo/service-vpn.yaml`: internal NLB service for Odoo admin/backend (`/web`) via VPN.
-- `moodle/service-vpn.yaml`: internal NLB service for Moodle (VPN clients only).
+- `osticket/`: osTicket deployment and service.
+- `odoo/ingress-public.yaml`: internet-facing ALB ingress for public Odoo routes.
+- `odoo/ingress-internal.yaml`: internal ALB ingress for private Odoo backend.
+- `moodle/ingress-internal.yaml`: internal ALB ingress for Moodle.
+- `osticket/ingress-internal.yaml`: internal ALB ingress for osTicket.
 
 ## Deploy
 
@@ -26,7 +28,8 @@ From the repository root:
 ```bash
 ./scripts/deploy-k8s-apps.sh \
   --odoo-db-password "<odoo-password>" \
-  --moodle-db-password "<moodle-password>"
+  --moodle-db-password "<moodle-password>" \
+  --osticket-db-password "<osticket-password>"
 ```
 
 The script:
@@ -41,7 +44,7 @@ Do not run `kubectl apply -k k8s` directly unless placeholders are already rende
 After deployment, get access endpoints:
 
 ```powershell
-kubectl get svc -n esm odoo-public odoo-vpn moodle-vpn
+kubectl get ingress -A
 ```
 
 ## Prerequisites

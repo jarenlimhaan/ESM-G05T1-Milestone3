@@ -2,16 +2,82 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: odoo-public-nginx-config
-  namespace: esm
+  namespace: odoo-public
 data:
   default.conf: |
     server {
       listen 8080;
       server_name _;
+      absolute_redirect off;
+      port_in_redirect off;
 
-      # Keep Odoo backend/admin private by denying /web paths on public LB.
+      # Allow only frontend static/media endpoints under /web on public LB.
+      location ^~ /web/assets/ {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 30s;
+        proxy_pass http://odoo-public-backend.odoo-public.svc.cluster.local;
+      }
+
+      location ^~ /web/static/ {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 30s;
+        proxy_pass http://odoo-public-backend.odoo-public.svc.cluster.local;
+      }
+
+      location ^~ /web/image/ {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 30s;
+        proxy_pass http://odoo-public-backend.odoo-public.svc.cluster.local;
+      }
+
+      location ^~ /web/content/ {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 30s;
+        proxy_pass http://odoo-public-backend.odoo-public.svc.cluster.local;
+      }
+
+      # Keep Odoo backend/admin private on public LB.
+      location ^~ /web/database {
+        return 403;
+      }
+
+      location ^~ /web/session {
+        return 403;
+      }
+
       location ^~ /web {
         return 403;
+      }
+
+      location = /odoo {
+        return 301 /;
+      }
+
+      location ^~ /odoo/ {
+        rewrite ^/odoo/?(.*)$ /$1 break;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 30s;
+        proxy_pass http://odoo-public-backend.odoo-public.svc.cluster.local;
       }
 
       location / {
@@ -21,6 +87,6 @@ data:
         proxy_http_version 1.1;
         proxy_read_timeout 300s;
         proxy_connect_timeout 30s;
-        proxy_pass http://odoo-public-backend.esm.svc.cluster.local;
+        proxy_pass http://odoo-public-backend.odoo-public.svc.cluster.local;
       }
     }

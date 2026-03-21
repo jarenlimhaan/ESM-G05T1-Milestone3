@@ -73,21 +73,21 @@ resource "aws_security_group" "internal_alb" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "internal_alb_http_vpn" {
-  security_group_id = aws_security_group.internal_alb.id
-  cidr_ipv4         = var.vpn_client_cidr
-  from_port         = 80
-  ip_protocol       = "tcp"
-  to_port           = 80
-  description       = "Allow HTTP from VPN clients"
+  security_group_id            = aws_security_group.internal_alb.id
+  referenced_security_group_id = aws_security_group.vpn.id
+  from_port                    = 80
+  ip_protocol                  = "tcp"
+  to_port                      = 80
+  description                  = "Allow HTTP from VPN endpoint"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "internal_alb_https_vpn" {
-  security_group_id = aws_security_group.internal_alb.id
-  cidr_ipv4         = var.vpn_client_cidr
-  from_port         = 443
-  ip_protocol       = "tcp"
-  to_port           = 443
-  description       = "Allow HTTPS from VPN clients"
+  security_group_id            = aws_security_group.internal_alb.id
+  referenced_security_group_id = aws_security_group.vpn.id
+  from_port                    = 443
+  ip_protocol                  = "tcp"
+  to_port                      = 443
+  description                  = "Allow HTTPS from VPN endpoint"
 }
 
 resource "aws_vpc_security_group_egress_rule" "internal_alb_to_eks" {
@@ -125,6 +125,16 @@ resource "aws_vpc_security_group_ingress_rule" "eks_cluster_from_nodes" {
   ip_protocol                  = "tcp"
   to_port                      = 443
   description                  = "Allow Kubernetes API server communication from nodes"
+}
+
+# Allow kubectl access to private EKS API from AWS Client VPN users.
+resource "aws_vpc_security_group_ingress_rule" "eks_cluster_from_vpn" {
+  security_group_id            = aws_security_group.eks_cluster.id
+  referenced_security_group_id = aws_security_group.vpn.id
+  from_port                    = 443
+  ip_protocol                  = "tcp"
+  to_port                      = 443
+  description                  = "Allow Kubernetes API server communication from VPN endpoint"
 }
 
 # Allow outbound to EKS nodes

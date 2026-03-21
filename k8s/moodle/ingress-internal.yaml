@@ -1,24 +1,19 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: esm-apps
-  namespace: esm
+  name: moodle-internal
+  namespace: moodle-private
   annotations:
     alb.ingress.kubernetes.io/scheme: internal
     alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: esm-internal
+    alb.ingress.kubernetes.io/group.order: "20"
     alb.ingress.kubernetes.io/healthcheck-path: /login/index.php
 spec:
   ingressClassName: alb
   rules:
     - http:
         paths:
-          - path: /odoo
-            pathType: Prefix
-            backend:
-              service:
-                name: odoo
-                port:
-                  number: 80
           - path: /moodle
             pathType: Prefix
             backend:
