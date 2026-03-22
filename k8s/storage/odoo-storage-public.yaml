@@ -12,7 +12,7 @@ spec:
   storageClassName: efs-static-public
   csi:
     driver: efs.csi.aws.com
-    volumeHandle: "fs-09c833d78b5e1ccfc::fsap-06fcd7b6e23698b90"
+    volumeHandle: "__EFS_ID__::__EFS_ACCESS_POINT_ID__"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

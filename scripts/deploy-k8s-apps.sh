@@ -5,6 +5,7 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/deploy-k8s-apps.sh \
+    [--odoo-image "<image-ref>"] \
     [--odoo-db-password "<password>"] \
     [--moodle-db-password "<password>"] \
     [--osticket-db-password "<password>"] \
@@ -24,6 +25,7 @@ Usage:
 
 Options:
   --odoo-db-password     Odoo password for secret/odoo-db.
+  --odoo-image           Odoo container image (default: odoo:17.0).
   --moodle-db-password   Moodle password for secret/moodle-db.
   --osticket-db-password Optional. Password for secret/osticket-db.
                          Defaults to --moodle-db-password value.
@@ -61,6 +63,7 @@ K8S_DIR="${REPO_ROOT}/k8s"
 AWS_REGION=""
 ODOO_DB_USER="odoo_admin"
 ODOO_DB_PASSWORD=""
+ODOO_IMAGE="odoo:17.0"
 MOODLE_DB_USER="moodle_admin"
 MOODLE_DB_PASSWORD=""
 MOODLE_DB_NAME="moodledb"
@@ -91,6 +94,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --odoo-db-password)
       ODOO_DB_PASSWORD="$2"
+      shift 2
+      ;;
+    --odoo-image)
+      ODOO_IMAGE="$2"
       shift 2
       ;;
     --moodle-db-user)
@@ -227,6 +234,7 @@ cp -R "${K8S_DIR}/." "${RENDER_DIR}/"
 echo "Rendering manifests with current Terraform outputs..."
 export ODOO_DB_HOST ODOO_DB_USER ODOO_DB_PASSWORD
 export ODOO_DB_NAME
+export ODOO_IMAGE
 export MOODLE_DB_HOST MOODLE_DB_USER MOODLE_DB_NAME MOODLE_DB_PASSWORD
 export OSTICKET_DB_HOST OSTICKET_DB_USER OSTICKET_DB_NAME OSTICKET_DB_PASSWORD
 export EFS_ID EFS_ACCESS_POINT_ID
@@ -239,6 +247,7 @@ while IFS= read -r -d '' file; do
     s/__ODOO_DB_USER__/$ENV{ODOO_DB_USER}/g;
     s/__ODOO_DB_PASSWORD__/$ENV{ODOO_DB_PASSWORD}/g;
     s/__ODOO_DB_NAME__/$ENV{ODOO_DB_NAME}/g;
+    s#__ODOO_IMAGE__#$ENV{ODOO_IMAGE}#g;
     s/__MOODLE_DB_HOST__/$ENV{MOODLE_DB_HOST}/g;
     s/__MOODLE_DB_USER__/$ENV{MOODLE_DB_USER}/g;
     s/__MOODLE_DB_NAME__/$ENV{MOODLE_DB_NAME}/g;

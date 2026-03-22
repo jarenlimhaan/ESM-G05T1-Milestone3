@@ -1,0 +1,13 @@
+.git
+.terraform
+.terraform.lock.hcl
+terraform/.terraform
+terraform/tfplan*
+filestore
+odoo17
+k8s
+scripts
+README.md
+DEPLOYMENT.md
+ODOO_LOCAL_SETUP.md
+*.md

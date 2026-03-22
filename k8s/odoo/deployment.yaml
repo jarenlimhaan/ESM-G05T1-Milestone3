@@ -17,13 +17,12 @@ spec:
     spec:
       containers:
         - name: odoo
-          image: odoo:16.0
+          image: __ODOO_IMAGE__
           imagePullPolicy: IfNotPresent
           args:
             - "--database=__ODOO_DB_NAME__"
             - "--db-filter=^__ODOO_DB_NAME__$"
-            - "--init=base"
-            - "--without-demo=all"
+            - "--proxy-mode"
           ports:
             - containerPort: 8069
           env:

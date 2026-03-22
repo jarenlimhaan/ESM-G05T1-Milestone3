@@ -77,7 +77,36 @@ curl -I "http://moodle.internal.esm.local/"
 curl -I "http://osticket.internal.esm.local/"
 ```
 
-## 4) Common Troubleshooting
+## 4) Deploy Custom Local Odoo Image + Bootstrap Data
+
+Use this when you want to ship your local Odoo image (from Docker) to EKS and bootstrap dump/filestore.
+
+```bash
+./scripts/deploy-odoo-image-to-eks.sh \
+  --source-image odoo17-custom:latest \
+  --ecr-repo-name esm/odoo17 \
+  --odoo-secret-id "esm/prod/odoo-db-password" \
+  --moodle-secret-id "esm/prod/moodle-db-password" \
+  --osticket-secret-id "esm/prod/osticket-db-password"
+```
+
+What this script does:
+1. Tags and pushes local image to ECR.
+2. Deploys K8s manifests using the pushed image.
+3. Scales Odoo deployments down temporarily.
+4. Restores `odoo17/odoo.sql.gz` into RDS Odoo DB.
+5. Copies `filestore/odoo` into EFS PVC (`odoo-private/odoo-pvc`).
+6. Runs one-time Odoo module upgrade job for helpdesk modules.
+7. Scales Odoo deployments back up and waits for rollout.
+
+Optional skip flags:
+- `--skip-db-restore`
+- `--skip-filestore-sync`
+- `--skip-module-upgrade`
+- `--skip-deploy`
+- `--skip-image-push`
+
+## 5) Common Troubleshooting
 
 ### Placeholder values appear in live deployment
 
@@ -101,7 +130,7 @@ kubectl describe pod -n <namespace> <pod-name>
 kubectl logs -n <namespace> <pod-name> --tail=200
 ```
 
-## 5) Safe Teardown (Cost Control)
+## 6) Safe Teardown (Cost Control)
 
 Recommended full cleanup:
 
@@ -122,7 +151,7 @@ Optional flags:
 ./scripts/destroy-everything.sh --skip-snapshot-cleanup
 ```
 
-## 6) Rebuild Later
+## 7) Rebuild Later
 
 When you want to run demo again:
 
