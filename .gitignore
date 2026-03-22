@@ -1,0 +1,4 @@
+filestore/
+odoo17/
+external_addons/
+.env
