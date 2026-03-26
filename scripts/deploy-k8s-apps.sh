@@ -17,6 +17,11 @@ Usage:
     [--odoo-db-user odoo_admin] \
     [--moodle-db-user moodle_admin] \
     [--moodle-db-name moodledb] \
+    [--moodle-image "<image-ref>"] \
+    [--moodle-admin-user admin] \
+    [--moodle-admin-password "Admin~1234"] \
+    [--moodle-admin-email "admin@esmos.meals.sg"] \
+    [--moodle-url "http://moodle.internal.esm.local"] \
     [--osticket-db-host "<host>"] \
     [--osticket-db-user moodle_admin] \
     [--osticket-db-name osticketdb] \
@@ -38,6 +43,12 @@ Options:
   --odoo-db-user         Odoo DB user (default: odoo_admin).
   --moodle-db-user       Moodle DB user (default: moodle_admin).
   --moodle-db-name       Moodle DB name (default: moodledb).
+  --moodle-image         Moodle container image (default: ellakcy/moodle:mysql_maria_apache_latest).
+  --moodle-admin-user    Moodle admin username (default: admin).
+  --moodle-admin-password
+                         Moodle admin password (default: Admin~1234).
+  --moodle-admin-email   Moodle admin email (default: admin@esmos.meals.sg).
+  --moodle-url           Moodle URL (default: http://moodle.internal.esm.local).
   --osticket-db-host     osTicket DB host. Defaults to Moodle DB host output.
   --osticket-db-user     osTicket DB user (default: moodle_admin).
   --osticket-db-name     osTicket DB name (default: osticketdb).
@@ -67,6 +78,11 @@ ODOO_IMAGE="odoo:17.0"
 MOODLE_DB_USER="moodle_admin"
 MOODLE_DB_PASSWORD=""
 MOODLE_DB_NAME="moodledb"
+MOODLE_IMAGE="ellakcy/moodle:mysql_maria_apache_latest"
+MOODLE_ADMIN_USER="admin"
+MOODLE_ADMIN_PASSWORD="Admin~1234"
+MOODLE_ADMIN_EMAIL="admin@esmos.meals.sg"
+MOODLE_URL="http://moodle.internal.esm.local"
 OSTICKET_DB_HOST=""
 OSTICKET_DB_USER="moodle_admin"
 OSTICKET_DB_PASSWORD=""
@@ -110,6 +126,26 @@ while [[ $# -gt 0 ]]; do
       ;;
     --moodle-db-name)
       MOODLE_DB_NAME="$2"
+      shift 2
+      ;;
+    --moodle-image)
+      MOODLE_IMAGE="$2"
+      shift 2
+      ;;
+    --moodle-admin-user)
+      MOODLE_ADMIN_USER="$2"
+      shift 2
+      ;;
+    --moodle-admin-password)
+      MOODLE_ADMIN_PASSWORD="$2"
+      shift 2
+      ;;
+    --moodle-admin-email)
+      MOODLE_ADMIN_EMAIL="$2"
+      shift 2
+      ;;
+    --moodle-url)
+      MOODLE_URL="$2"
       shift 2
       ;;
     --osticket-db-host)
@@ -236,6 +272,7 @@ export ODOO_DB_HOST ODOO_DB_USER ODOO_DB_PASSWORD
 export ODOO_DB_NAME
 export ODOO_IMAGE
 export MOODLE_DB_HOST MOODLE_DB_USER MOODLE_DB_NAME MOODLE_DB_PASSWORD
+export MOODLE_IMAGE MOODLE_ADMIN_USER MOODLE_ADMIN_PASSWORD MOODLE_ADMIN_EMAIL MOODLE_URL
 export OSTICKET_DB_HOST OSTICKET_DB_USER OSTICKET_DB_NAME OSTICKET_DB_PASSWORD
 export EFS_ID EFS_ACCESS_POINT_ID
 export CLUSTER_NAME CLUSTER_AUTOSCALER_ROLE_ARN EKS_NODE_GROUP_ASG_NAME
@@ -252,6 +289,11 @@ while IFS= read -r -d '' file; do
     s/__MOODLE_DB_USER__/$ENV{MOODLE_DB_USER}/g;
     s/__MOODLE_DB_NAME__/$ENV{MOODLE_DB_NAME}/g;
     s/__MOODLE_DB_PASSWORD__/$ENV{MOODLE_DB_PASSWORD}/g;
+    s#__MOODLE_IMAGE__#$ENV{MOODLE_IMAGE}#g;
+    s/__MOODLE_ADMIN_USER__/$ENV{MOODLE_ADMIN_USER}/g;
+    s/__MOODLE_ADMIN_PASSWORD__/$ENV{MOODLE_ADMIN_PASSWORD}/g;
+    s/__MOODLE_ADMIN_EMAIL__/$ENV{MOODLE_ADMIN_EMAIL}/g;
+    s#__MOODLE_URL__#$ENV{MOODLE_URL}#g;
     s/__OSTICKET_DB_HOST__/$ENV{OSTICKET_DB_HOST}/g;
     s/__OSTICKET_DB_USER__/$ENV{OSTICKET_DB_USER}/g;
     s/__OSTICKET_DB_NAME__/$ENV{OSTICKET_DB_NAME}/g;

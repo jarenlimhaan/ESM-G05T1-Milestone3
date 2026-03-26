@@ -15,45 +15,41 @@ spec:
       labels:
         app: moodle
     spec:
-      initContainers:
-        - name: init-moodle-code
-          image: alpine/git:2.47.2
-          command:
-            - sh
-            - -c
-            - |
-              if [ ! -f /work/index.php ]; then
-                git clone --depth 1 --branch MOODLE_404_STABLE https://github.com/moodle/moodle.git /work
-              fi
-              chown -R 33:33 /work
-          volumeMounts:
-            - name: moodle-app
-              mountPath: /work
       containers:
         - name: moodle
-          image: moodlehq/moodle-php-apache:8.2-bookworm
+          image: __MOODLE_IMAGE__
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
           env:
-            - name: MOODLE_DATABASE_TYPE
-              value: mysqli
-            - name: MOODLE_DATABASE_HOST
+            - name: MOODLE_DB_TYPE
+              value: mariadb
+            - name: MOODLE_DB_HOST
               value: "__MOODLE_DB_HOST__"
-            - name: MOODLE_DATABASE_PORT_NUMBER
+            - name: MOODLE_DB_PORT
               value: "3306"
-            - name: MOODLE_DATABASE_USER
+            - name: MOODLE_DB_USER
               value: "__MOODLE_DB_USER__"
-            - name: MOODLE_DATABASE_NAME
+            - name: MOODLE_DB_NAME
               value: "__MOODLE_DB_NAME__"
-            - name: MOODLE_DATABASE_PASSWORD
+            - name: MOODLE_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: moodle-db
                   key: password
+            - name: MOODLE_ADMIN
+              value: "__MOODLE_ADMIN_USER__"
+            - name: MOODLE_ADMIN_PASSWORD
+              value: "__MOODLE_ADMIN_PASSWORD__"
+            - name: MOODLE_ADMIN_EMAIL
+              value: "__MOODLE_ADMIN_EMAIL__"
+            - name: MOODLE_URL
+              value: "__MOODLE_URL__"
           volumeMounts:
-            - name: moodle-app
+            - name: moodle-web
               mountPath: /var/www/html
+            - name: moodle-data
+              mountPath: /var/moodledata
           resources:
             requests:
               cpu: 250m
@@ -72,5 +68,7 @@ spec:
             initialDelaySeconds: 90
             periodSeconds: 20
       volumes:
-        - name: moodle-app
+        - name: moodle-web
+          emptyDir: {}
+        - name: moodle-data
           emptyDir: {}

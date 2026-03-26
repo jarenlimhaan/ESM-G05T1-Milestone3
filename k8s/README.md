@@ -27,6 +27,11 @@ From the repository root:
 
 ```bash
 ./scripts/deploy-k8s-apps.sh \
+  --moodle-image "ellakcy/moodle:mysql_maria_apache_latest" \
+  --moodle-admin-user "admin" \
+  --moodle-admin-password "Admin~1234" \
+  --moodle-admin-email "admin@esmos.meals.sg" \
+  --moodle-url "http://moodle.internal.esm.local" \
   --odoo-db-password "<odoo-password>" \
   --moodle-db-password "<moodle-password>" \
   --osticket-db-password "<osticket-password>"
