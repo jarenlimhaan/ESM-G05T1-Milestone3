@@ -191,5 +191,6 @@ K8s-only cleanup:
 
 - Use `scripts/deploy-k8s-apps.sh` (not raw `kubectl apply -k k8s`) because manifests contain placeholders and must be rendered first.
 - `scripts/rebuild-from-scratch.sh` calls `destroy-everything.sh` then `deploy-odoo-image-to-eks.sh --provision-infra`.
+- If `OSTICKET_DB_USER` is `moodle_admin`, deploy scripts hard-enforce osTicket to use the Moodle DB password to prevent secret drift.
 - If you destroy/recreate often, endpoints and VPN configuration can change. Re-generate VPN profile after each fresh create.
 - For school demo cost control: destroy stack immediately when not in use.

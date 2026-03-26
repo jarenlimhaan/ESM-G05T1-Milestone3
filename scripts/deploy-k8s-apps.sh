@@ -286,7 +286,12 @@ if [[ -n "${OSTICKET_SECRET_ID}" ]]; then
   OSTICKET_DB_PASSWORD="$(aws --region "${AWS_REGION}" secretsmanager get-secret-value --secret-id "${OSTICKET_SECRET_ID}" --query SecretString --output text)"
 fi
 
-if [[ -z "${OSTICKET_DB_PASSWORD}" ]]; then
+if [[ "${OSTICKET_DB_USER}" == "${MOODLE_DB_USER}" ]]; then
+  if [[ -n "${OSTICKET_SECRET_ID}" || -n "${OSTICKET_DB_PASSWORD}" ]]; then
+    echo "Info: OSTICKET_DB_USER matches MOODLE_DB_USER (${MOODLE_DB_USER}); forcing osTicket DB password to Moodle DB password."
+  fi
+  OSTICKET_DB_PASSWORD="${MOODLE_DB_PASSWORD}"
+elif [[ -z "${OSTICKET_DB_PASSWORD}" ]]; then
   OSTICKET_DB_PASSWORD="${MOODLE_DB_PASSWORD}"
 fi
 

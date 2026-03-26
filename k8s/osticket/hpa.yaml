@@ -9,7 +9,7 @@ spec:
     kind: Deployment
     name: osticket
   minReplicas: 1
-  maxReplicas: 3
+  maxReplicas: 1
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0
