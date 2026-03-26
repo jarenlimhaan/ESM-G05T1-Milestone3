@@ -5,7 +5,6 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/deploy-k8s-apps.sh \
-    [--odoo-image "<image-ref>"] \
     [--odoo-db-password "<password>"] \
     [--moodle-db-password "<password>"] \
     [--osticket-db-password "<password>"] \
@@ -15,6 +14,7 @@ Usage:
     [--terraform-dir terraform] \
     [--aws-region ap-southeast-1] \
     [--odoo-db-user odoo_admin] \
+    [--odoo-image "<image-ref>"] \
     [--moodle-db-user moodle_admin] \
     [--moodle-db-name moodledb] \
     [--moodle-image "<image-ref>"] \
@@ -30,7 +30,6 @@ Usage:
 
 Options:
   --odoo-db-password     Odoo password for secret/odoo-db.
-  --odoo-image           Odoo container image (default: odoo:17.0).
   --moodle-db-password   Moodle password for secret/moodle-db.
   --osticket-db-password Optional. Password for secret/osticket-db.
                          Defaults to --moodle-db-password value.
@@ -41,6 +40,7 @@ Options:
   --terraform-dir        Terraform directory (default: terraform).
   --aws-region           AWS region. If omitted, read from Terraform output.
   --odoo-db-user         Odoo DB user (default: odoo_admin).
+  --odoo-image           Odoo container image (default: odoo:16.0).
   --moodle-db-user       Moodle DB user (default: moodle_admin).
   --moodle-db-name       Moodle DB name (default: moodledb).
   --moodle-image         Moodle container image (default: ellakcy/moodle:mysql_maria_apache_latest).
@@ -66,6 +66,41 @@ require_cmd() {
   fi
 }
 
+run_mysql_sql() {
+  local sql="$1"
+  local pod="mysql-client-$(date +%s%N | tail -c 8)"
+  kubectl run "${pod}" \
+    --image=mysql:8.0 \
+    --restart=Never \
+    --rm -i \
+    --env="MYSQL_PWD=${MOODLE_DB_PASSWORD}" \
+    --command -- sh -lc \
+    "mysql -h '${MOODLE_DB_HOST}' -u '${MOODLE_DB_USER}' -D mysql -N -s -e \"${sql}\""
+}
+
+ensure_moodle_db_is_complete() {
+  local version
+  version="$(run_mysql_sql "USE ${MOODLE_DB_NAME}; SELECT value FROM mdl_config WHERE name='version' LIMIT 1;" 2>/dev/null | tr -d '\r' || true)"
+  if [[ -n "${version}" ]]; then
+    echo "Moodle DB check OK (version=${version})."
+    return 0
+  fi
+
+  echo "Moodle DB appears incomplete (missing mdl_config.version). Repairing..."
+  run_mysql_sql "DROP DATABASE IF EXISTS ${MOODLE_DB_NAME}; CREATE DATABASE ${MOODLE_DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON ${MOODLE_DB_NAME}.* TO '${MOODLE_DB_USER}'@'%'; FLUSH PRIVILEGES;" >/dev/null
+
+  kubectl rollout restart deployment/moodle -n moodle-private
+  kubectl rollout status deployment/moodle -n moodle-private --timeout=420s
+
+  version="$(run_mysql_sql "USE ${MOODLE_DB_NAME}; SELECT value FROM mdl_config WHERE name='version' LIMIT 1;" 2>/dev/null | tr -d '\r' || true)"
+  if [[ -z "${version}" ]]; then
+    echo "Error: Moodle DB repair did not complete (version still missing)." >&2
+    return 1
+  fi
+
+  echo "Moodle DB repaired successfully (version=${version})."
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
@@ -73,8 +108,8 @@ TERRAFORM_DIR="${REPO_ROOT}/terraform"
 K8S_DIR="${REPO_ROOT}/k8s"
 AWS_REGION=""
 ODOO_DB_USER="odoo_admin"
+ODOO_IMAGE="odoo:16.0"
 ODOO_DB_PASSWORD=""
-ODOO_IMAGE="odoo:17.0"
 MOODLE_DB_USER="moodle_admin"
 MOODLE_DB_PASSWORD=""
 MOODLE_DB_NAME="moodledb"
@@ -108,12 +143,12 @@ while [[ $# -gt 0 ]]; do
       ODOO_DB_USER="$2"
       shift 2
       ;;
-    --odoo-db-password)
-      ODOO_DB_PASSWORD="$2"
-      shift 2
-      ;;
     --odoo-image)
       ODOO_IMAGE="$2"
+      shift 2
+      ;;
+    --odoo-db-password)
+      ODOO_DB_PASSWORD="$2"
       shift 2
       ;;
     --moodle-db-user)
@@ -269,8 +304,8 @@ cp -R "${K8S_DIR}/." "${RENDER_DIR}/"
 
 echo "Rendering manifests with current Terraform outputs..."
 export ODOO_DB_HOST ODOO_DB_USER ODOO_DB_PASSWORD
-export ODOO_DB_NAME
 export ODOO_IMAGE
+export ODOO_DB_NAME
 export MOODLE_DB_HOST MOODLE_DB_USER MOODLE_DB_NAME MOODLE_DB_PASSWORD
 export MOODLE_IMAGE MOODLE_ADMIN_USER MOODLE_ADMIN_PASSWORD MOODLE_ADMIN_EMAIL MOODLE_URL
 export OSTICKET_DB_HOST OSTICKET_DB_USER OSTICKET_DB_NAME OSTICKET_DB_PASSWORD
@@ -283,8 +318,8 @@ while IFS= read -r -d '' file; do
     s/__ODOO_DB_HOST__/$ENV{ODOO_DB_HOST}/g;
     s/__ODOO_DB_USER__/$ENV{ODOO_DB_USER}/g;
     s/__ODOO_DB_PASSWORD__/$ENV{ODOO_DB_PASSWORD}/g;
-    s/__ODOO_DB_NAME__/$ENV{ODOO_DB_NAME}/g;
     s#__ODOO_IMAGE__#$ENV{ODOO_IMAGE}#g;
+    s/__ODOO_DB_NAME__/$ENV{ODOO_DB_NAME}/g;
     s/__MOODLE_DB_HOST__/$ENV{MOODLE_DB_HOST}/g;
     s/__MOODLE_DB_USER__/$ENV{MOODLE_DB_USER}/g;
     s/__MOODLE_DB_NAME__/$ENV{MOODLE_DB_NAME}/g;
@@ -328,6 +363,8 @@ kubectl rollout status deployment/odoo-private-gateway -n odoo-private --timeout
 kubectl rollout status deployment/odoo-public -n odoo-public --timeout=300s
 kubectl rollout status deployment/moodle -n moodle-private --timeout=300s
 kubectl rollout status deployment/osticket -n osticket-private --timeout=300s
+
+ensure_moodle_db_is_complete
 
 echo "Current pod status:"
 kubectl get pods -n odoo-public

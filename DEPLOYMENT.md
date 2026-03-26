@@ -16,6 +16,20 @@ kubectl version --client
 
 ## 2) Fresh Deployment
 
+### Recommended: one-command rebuild
+
+```bash
+./scripts/rebuild-from-scratch.sh
+```
+
+This runs:
+- `destroy-everything.sh` (unless `--skip-destroy`),
+- infra provisioning,
+- Odoo image push to ECR,
+- k8s deploy,
+- Odoo bootstrap (DB restore/filestore/module upgrade),
+- Moodle DB self-heal check.
+
 ### Option A: Deploy with inline passwords
 
 ```bash
@@ -77,41 +91,17 @@ curl -I "http://moodle.internal.esm.local/"
 curl -I "http://osticket.internal.esm.local/"
 ```
 
-## 4) Deploy Custom Local Odoo Image + Bootstrap Data
-
-Use this when you want to ship your local Odoo image (from Docker) to EKS and bootstrap dump/filestore.
-
-```bash
-./scripts/deploy-odoo-image-to-eks.sh \
-  --source-image odoo17-custom:latest \
-  --ecr-repo-name esm/odoo17 \
-  --odoo-secret-id "esm/prod/odoo-db-password" \
-  --moodle-secret-id "esm/prod/moodle-db-password" \
-  --osticket-secret-id "esm/prod/osticket-db-password"
-```
-
-What this script does:
-1. Tags and pushes local image to ECR.
-2. Deploys K8s manifests using the pushed image.
-3. Scales Odoo deployments down temporarily.
-4. Restores `odoo17/odoo.sql.gz` into RDS Odoo DB.
-5. Copies `filestore/odoo` into EFS PVC (`odoo-private/odoo-pvc`).
-6. Runs one-time Odoo module upgrade job for helpdesk modules.
-7. Scales Odoo deployments back up and waits for rollout.
-
-Optional skip flags:
-- `--skip-db-restore`
-- `--skip-filestore-sync`
-- `--skip-module-upgrade`
-- `--skip-deploy`
-- `--skip-image-push`
-
-## 5) Common Troubleshooting
+## 4) Common Troubleshooting
 
 ### Placeholder values appear in live deployment
 
 Cause: raw `kubectl apply -k k8s` was used.
 Fix: re-run `scripts/deploy-k8s-apps.sh` so placeholders are rendered.
+
+### Moodle shows "Config table does not contain the version"
+
+Cause: partial/failed Moodle install left DB incomplete.
+Fix: `deploy-k8s-apps.sh` now auto-detects this and recreates `moodledb` then restarts Moodle.
 
 ### VPN connects but internal domain is unreachable
 
@@ -130,7 +120,7 @@ kubectl describe pod -n <namespace> <pod-name>
 kubectl logs -n <namespace> <pod-name> --tail=200
 ```
 
-## 6) Safe Teardown (Cost Control)
+## 5) Safe Teardown (Cost Control)
 
 Recommended full cleanup:
 
@@ -151,7 +141,7 @@ Optional flags:
 ./scripts/destroy-everything.sh --skip-snapshot-cleanup
 ```
 
-## 7) Rebuild Later
+## 6) Rebuild Later
 
 When you want to run demo again:
 
@@ -163,3 +153,5 @@ When you want to run demo again:
 ```
 
 This wrapper tears down first, then deploys infra + apps.
+
+If you use this wrapper, Docker must be available for Odoo image push.

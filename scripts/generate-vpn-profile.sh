@@ -61,8 +61,45 @@ fi
 
 require_cmd terraform
 require_cmd aws
-require_cmd jq
 require_cmd perl
+
+extract_state_attr() {
+  local state_json="$1"
+  local type_name="$2"
+  local resource_name="$3"
+  local attr_name="$4"
+
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "${state_json}" | jq -r \
+      --arg t "${type_name}" \
+      --arg n "${resource_name}" \
+      --arg a "${attr_name}" \
+      '.resources[]
+       | select(.module=="module.vpn" and .type==$t and .name==$n)
+       | .instances[0].attributes[$a]'
+  else
+    STATE_JSON_PAYLOAD="${state_json}" python - "$type_name" "$resource_name" "$attr_name" <<'PY'
+import json
+import os
+import sys
+
+type_name, resource_name, attr_name = sys.argv[1], sys.argv[2], sys.argv[3]
+state = json.loads(os.environ.get("STATE_JSON_PAYLOAD", ""))
+
+for r in state.get("resources", []):
+    if r.get("module") == "module.vpn" and r.get("type") == type_name and r.get("name") == resource_name:
+        instances = r.get("instances") or []
+        if not instances:
+            continue
+        attrs = instances[0].get("attributes") or {}
+        value = attrs.get(attr_name, "")
+        print(value if value is not None else "")
+        sys.exit(0)
+
+print("")
+PY
+  fi
+}
 
 mkdir -p "$(dirname "${OUTPUT_FILE}")"
 
@@ -82,9 +119,9 @@ aws ec2 export-client-vpn-client-configuration \
 echo "Reading TLS materials from Terraform state..."
 STATE_JSON="$(terraform -chdir="${TERRAFORM_DIR}" state pull)"
 
-CLIENT_KEY="$(printf '%s' "${STATE_JSON}" | jq -r '.resources[] | select(.module=="module.vpn" and .type=="tls_private_key" and .name=="vpn_client") | .instances[0].attributes.private_key_pem')"
-CLIENT_CERT="$(printf '%s' "${STATE_JSON}" | jq -r '.resources[] | select(.module=="module.vpn" and .type=="tls_locally_signed_cert" and .name=="vpn_client") | .instances[0].attributes.cert_pem')"
-CA_CERT="$(printf '%s' "${STATE_JSON}" | jq -r '.resources[] | select(.module=="module.vpn" and .type=="tls_self_signed_cert" and .name=="vpn_server") | .instances[0].attributes.cert_pem')"
+CLIENT_KEY="$(extract_state_attr "${STATE_JSON}" "tls_private_key" "vpn_client" "private_key_pem")"
+CLIENT_CERT="$(extract_state_attr "${STATE_JSON}" "tls_locally_signed_cert" "vpn_client" "cert_pem")"
+CA_CERT="$(extract_state_attr "${STATE_JSON}" "tls_self_signed_cert" "vpn_server" "cert_pem")"
 
 if [[ -z "${CLIENT_KEY}" || "${CLIENT_KEY}" == "null" || -z "${CLIENT_CERT}" || "${CLIENT_CERT}" == "null" || -z "${CA_CERT}" || "${CA_CERT}" == "null" ]]; then
   echo "Error: failed to read VPN TLS materials from Terraform state." >&2
