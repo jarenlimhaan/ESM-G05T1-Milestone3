@@ -14,6 +14,7 @@ resources:
   - odoo/private-gateway-configmap.yaml
   - odoo/private-gateway-deployment.yaml
   - odoo/hpa.yaml
+  - odoo/hpa-public.yaml
   - odoo/service.yaml
   - odoo/service-public-backend.yaml
   - odoo/service-private-backend.yaml
