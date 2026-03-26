@@ -69,6 +69,7 @@ Install and configure:
 3. `kubectl`
 4. `bash` (Git Bash/WSL/macOS/Linux)
 5. `jq`, `perl` (required by scripts)
+6. `docker` / Docker Desktop (required for Odoo image push in rebuild flow)
 
 Validate quickly:
 
@@ -86,7 +87,30 @@ kubectl version --client
 ./scripts/destroy-everything.sh
 ```
 
-### 2. Deploy Infra + Kubernetes Apps
+### 2. Rebuild Full Stack (Recommended)
+
+This is the default workflow now. It will:
+- destroy old stack (unless you pass `--skip-destroy`),
+- provision infra,
+- build/push your local Odoo image to ECR,
+- deploy Kubernetes manifests,
+- run bootstrap tasks (Odoo DB restore + filestore sync + module upgrade),
+- auto-repair Moodle DB if install is partial (`mdl_config.version` missing).
+
+```bash
+./scripts/rebuild-from-scratch.sh
+```
+
+If Docker is unavailable and you already have a valid image in ECR:
+
+```bash
+./scripts/deploy-odoo-image-to-eks.sh \
+  --skip-image-push \
+  --target-image "<your-ecr-image:tag>" \
+  --provision-infra
+```
+
+### 3. Deploy Infra + Kubernetes Apps (Direct Script)
 
 Use direct DB passwords:
 
@@ -108,13 +132,13 @@ Or use AWS Secrets Manager IDs:
   --osticket-secret-id "esm/prod/osticket-db-password"
 ```
 
-### 3. Get Endpoints
+### 4. Get Endpoints
 
 ```bash
 terraform -chdir=terraform output application_access_urls
 ```
 
-### 4. Generate VPN Profile (Internal Access)
+### 5. Generate VPN Profile (Internal Access)
 
 ```bash
 ./scripts/generate-vpn-profile.sh --output "$HOME/Downloads/esm-vpn-config-fixed.ovpn"
@@ -166,5 +190,6 @@ K8s-only cleanup:
 ## Notes
 
 - Use `scripts/deploy-k8s-apps.sh` (not raw `kubectl apply -k k8s`) because manifests contain placeholders and must be rendered first.
+- `scripts/rebuild-from-scratch.sh` calls `destroy-everything.sh` then `deploy-odoo-image-to-eks.sh --provision-infra`.
 - If you destroy/recreate often, endpoints and VPN configuration can change. Re-generate VPN profile after each fresh create.
 - For school demo cost control: destroy stack immediately when not in use.

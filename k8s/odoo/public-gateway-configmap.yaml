@@ -52,8 +52,16 @@ data:
         proxy_pass http://odoo-public-backend.odoo-public.svc.cluster.local;
       }
 
-      # Keep only DB manager APIs private on public LB.
+      # Keep Odoo backend/admin private on public LB.
       location ^~ /web/database {
+        return 403;
+      }
+
+      location ^~ /web/session {
+        return 403;
+      }
+
+      location ^~ /web {
         return 403;
       }
 

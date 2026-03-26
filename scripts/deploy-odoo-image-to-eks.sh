@@ -23,12 +23,14 @@ Usage:
     [--skip-filestore-sync] \
     [--skip-module-upgrade] \
     [--sql-dump-file odoo17/odoo.sql.gz] \
-    [--filestore-dir filestore/odoo]
+    [--filestore-dir filestore/odoo] \
+    [--provision-infra]
 
 Notes:
   - This script reuses ./scripts/deploy-k8s-apps.sh for base manifest deployment.
   - DB restore is destructive for the target Odoo DB.
   - Filestore sync copies local filestore into EFS-backed PVC (odoo-private/odoo-pvc).
+  - Defaults are preset for this repo, so you can run with no secret args.
 EOF
 }
 
@@ -50,9 +52,11 @@ TERRAFORM_DIR="${REPO_ROOT}/terraform"
 AWS_REGION=""
 ODOO_DB_USER="odoo_admin"
 ODOO_DB_PASSWORD=""
-ODOO_SECRET_ID=""
+ODOO_SECRET_ID="esm/prod/odoo-db-password"
+MOODLE_DB_USER="moodle_admin"
 MOODLE_DB_PASSWORD=""
-MOODLE_SECRET_ID=""
+MOODLE_SECRET_ID="esm/prod/moodle-db-password"
+OSTICKET_DB_USER="moodle_admin"
 OSTICKET_DB_PASSWORD=""
 OSTICKET_SECRET_ID=""
 
@@ -65,6 +69,7 @@ SKIP_DEPLOY="false"
 SKIP_DB_RESTORE="false"
 SKIP_FILESTORE_SYNC="false"
 SKIP_MODULE_UPGRADE="false"
+PROVISION_INFRA="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -148,6 +153,10 @@ while [[ $# -gt 0 ]]; do
       SKIP_MODULE_UPGRADE="true"
       shift
       ;;
+    --provision-infra)
+      PROVISION_INFRA="true"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -175,6 +184,12 @@ require_cmd aws
 require_cmd kubectl
 require_cmd docker
 
+if [[ "${PROVISION_INFRA}" == "true" ]]; then
+  echo "Provisioning infrastructure with Terraform..."
+  terraform -chdir="${TERRAFORM_DIR}" init
+  terraform -chdir="${TERRAFORM_DIR}" apply -auto-approve
+fi
+
 if [[ "${SKIP_DB_RESTORE}" != "true" && ! -f "${SQL_DUMP_FILE}" ]]; then
   echo "Error: SQL dump not found: ${SQL_DUMP_FILE}" >&2
   exit 1
@@ -201,6 +216,13 @@ if [[ -n "${MOODLE_SECRET_ID}" ]]; then
 fi
 if [[ -n "${OSTICKET_SECRET_ID}" ]]; then
   OSTICKET_DB_PASSWORD="$(aws --region "${AWS_REGION}" secretsmanager get-secret-value --secret-id "${OSTICKET_SECRET_ID}" --query SecretString --output text)"
+fi
+
+# osTicket uses moodle_admin by default in this stack, so keep it pinned to Moodle password
+# unless a different DB user is explicitly provided.
+if [[ "${OSTICKET_DB_USER}" == "${MOODLE_DB_USER}" ]]; then
+  OSTICKET_DB_PASSWORD="${MOODLE_DB_PASSWORD}"
+  OSTICKET_SECRET_ID=""
 fi
 
 echo "Updating kubeconfig for ${CLUSTER_NAME} (${AWS_REGION})..."

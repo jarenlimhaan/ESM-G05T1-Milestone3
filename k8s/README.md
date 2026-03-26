@@ -27,6 +27,11 @@ From the repository root:
 
 ```bash
 ./scripts/deploy-k8s-apps.sh \
+  --moodle-image "ellakcy/moodle:mysql_maria_apache_latest" \
+  --moodle-admin-user "admin" \
+  --moodle-admin-password "Admin~1234" \
+  --moodle-admin-email "admin@esmos.meals.sg" \
+  --moodle-url "http://moodle.internal.esm.local" \
   --odoo-db-password "<odoo-password>" \
   --moodle-db-password "<moodle-password>" \
   --osticket-db-password "<osticket-password>"
@@ -38,8 +43,16 @@ The script:
 2. Updates `kubeconfig` for the EKS cluster.
 3. Renders manifest placeholders into a temporary directory.
 4. Runs `kubectl apply -k` against the rendered manifests.
+5. Restarts deployments and verifies rollout.
+6. Checks Moodle DB install state and auto-repairs if `mdl_config.version` is missing.
 
 Do not run `kubectl apply -k k8s` directly unless placeholders are already rendered.
+
+For full project rebuild (destroy + infra + image push + deploy + bootstrap), use:
+
+```bash
+./scripts/rebuild-from-scratch.sh
+```
 
 After deployment, get access endpoints:
 

@@ -17,7 +17,7 @@ Usage:
 
 Notes:
   - By default this script destroys existing stack first.
-  - Then it runs deploy script with --provision-infra.
+  - Then it runs deploy-odoo-image-to-eks.sh with --provision-infra.
 EOF
 }
 
@@ -47,6 +47,6 @@ if [[ "${SKIP_DESTROY}" != "true" ]]; then
   "${SCRIPT_DIR}/destroy-everything.sh"
 fi
 
-"${SCRIPT_DIR}/deploy-k8s-apps.sh" --provision-infra "${ARGS[@]}"
+"${SCRIPT_DIR}/deploy-odoo-image-to-eks.sh" --provision-infra "${ARGS[@]}"
 
 echo "Rebuild complete."
