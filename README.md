@@ -1,4 +1,4 @@
-﻿# ESM AWS + Kubernetes (School Project)
+﻿# ESM AWS + Kubernetes
 
 This repository provisions AWS infrastructure with Terraform and deploys apps to EKS with Kubernetes manifests.
 
@@ -17,51 +17,7 @@ This repository provisions AWS infrastructure with Terraform and deploys apps to
 - `k8s/` -> Kubernetes manifests (template placeholders)
 - `scripts/` -> deploy/teardown/VPN helper scripts
 
-## Local Docker (Odoo 17)
-
-Use this when you want to run Odoo locally with the provided SQL dump and filestore.
-
-1. Copy env file:
-
-```bash
-cp .env.example .env
-```
-
-2. Prepare required external addons:
-
-```powershell
-./scripts/prepare-odoo-addons.ps1
-```
-
-3. Start containers:
-
-```bash
-docker compose up -d
-```
-
-4. Follow logs:
-
-```bash
-docker compose logs -f db odoo
-```
-
-5. Open Odoo:
-
-```text
-http://localhost:8069
-```
-
-Important:
-- SQL import (`odoo17/odoo.sql.gz`) only runs on first DB initialization.
-- To re-import from scratch, remove the DB volume first:
-
-```bash
-docker compose down -v
-docker compose up -d
-```
-
 ## Prerequisites
-
 Install and configure:
 
 1. `aws` CLI (authenticated to your AWS account)
@@ -108,6 +64,14 @@ If Docker is unavailable and you already have a valid image in ECR:
   --skip-image-push \
   --target-image "<your-ecr-image:tag>" \
   --provision-infra
+```
+
+Current known-good example:
+
+```bash
+./scripts/deploy-odoo-image-to-eks.sh \
+  --skip-image-push \
+  --target-image 233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/odoo17:20260327-223509
 ```
 
 ### 3. Deploy Infra + Kubernetes Apps (Direct Script)
