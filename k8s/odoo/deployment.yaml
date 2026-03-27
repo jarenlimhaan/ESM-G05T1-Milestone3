@@ -26,6 +26,29 @@ spec:
             - "--without-demo=all"
           ports:
             - containerPort: 8069
+          startupProbe:
+            httpGet:
+              path: /web/login
+              port: 8069
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /web/login
+              port: 8069
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /web/login
+              port: 8069
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
           env:
             - name: HOST
               value: "__ODOO_DB_HOST__"
