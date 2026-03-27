@@ -9,6 +9,14 @@
 # ==============================================================================
 # Define common values and tags that are used across modules.
 
+data "aws_secretsmanager_secret_version" "odoo_db_password" {
+  secret_id = var.odoo_db_password_secret_id
+}
+
+data "aws_secretsmanager_secret_version" "moodle_db_password" {
+  secret_id = var.moodle_db_password_secret_id
+}
+
 locals {
   common_tags = merge(
     {
@@ -33,6 +41,9 @@ locals {
   odoo_internal_fqdn     = "${var.odoo_internal_record_name}.${var.private_route53_zone_name}"
   moodle_internal_fqdn   = "${var.moodle_internal_record_name}.${var.private_route53_zone_name}"
   osticket_internal_fqdn = "${var.osticket_internal_record_name}.${var.private_route53_zone_name}"
+
+  odoo_db_password_resolved   = coalesce(try(data.aws_secretsmanager_secret_version.odoo_db_password.secret_string, null), var.odoo_db_password)
+  moodle_db_password_resolved = coalesce(try(data.aws_secretsmanager_secret_version.moodle_db_password.secret_string, null), var.moodle_db_password)
 }
 
 # ==============================================================================
@@ -105,13 +116,13 @@ module "rds" {
   # Odoo PostgreSQL Configuration
   odoo_db_name        = var.odoo_db_name
   odoo_db_username    = var.odoo_db_username
-  odoo_db_password    = var.odoo_db_password
+  odoo_db_password    = local.odoo_db_password_resolved
   odoo_instance_class = var.db_instance_class
 
   # Moodle MySQL Configuration
   moodle_db_name        = var.moodle_db_name
   moodle_db_username    = var.moodle_db_username
-  moodle_db_password    = var.moodle_db_password
+  moodle_db_password    = local.moodle_db_password_resolved
   moodle_instance_class = var.db_instance_class
 
   # Backup Configuration

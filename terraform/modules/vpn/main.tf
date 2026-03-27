@@ -214,6 +214,19 @@ resource "aws_ec2_client_vpn_route" "internet" {
   client_vpn_endpoint_id = aws_ec2_client_vpn_endpoint.main.id
   destination_cidr_block = "0.0.0.0/0"
   target_vpc_subnet_id   = var.private_subnet_ids[0]
+
+  # Client VPN routes are eventually consistent in AWS.
+  # Ensure route creation waits for subnet association + authorization
+  # and allow a longer create window to avoid transient timeout failures.
+  depends_on = [
+    aws_ec2_client_vpn_network_association.main,
+    aws_ec2_client_vpn_authorization_rule.main
+  ]
+
+  timeouts {
+    create = "15m"
+    delete = "15m"
+  }
 }
 
 # ==============================================================================

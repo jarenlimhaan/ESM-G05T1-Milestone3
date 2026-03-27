@@ -149,8 +149,14 @@ variable "odoo_db_username" {
 variable "odoo_db_password" {
   description = "Password for Odoo PostgreSQL database"
   type        = string
-  default     = "ChangeMeSecurePassword123!"
   sensitive   = true
+  default     = null
+}
+
+variable "odoo_db_password_secret_id" {
+  description = "AWS Secrets Manager secret ID containing Odoo DB password"
+  type        = string
+  default     = "esm/prod/odoo-db-password"
 }
 
 variable "moodle_db_name" {
@@ -169,8 +175,14 @@ variable "moodle_db_username" {
 variable "moodle_db_password" {
   description = "Password for Moodle MySQL database"
   type        = string
-  default     = "ChangeMeSecurePassword456!"
   sensitive   = true
+  default     = null
+}
+
+variable "moodle_db_password_secret_id" {
+  description = "AWS Secrets Manager secret ID containing Moodle DB password"
+  type        = string
+  default     = "esm/prod/moodle-db-password"
 }
 
 variable "db_instance_class" {

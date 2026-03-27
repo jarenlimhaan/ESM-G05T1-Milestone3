@@ -1,0 +1,30 @@
+services:
+  osticket:
+    image: ${OSTICKET_IMAGE}
+    container_name: osticket
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: ${OSTICKET_DB_HOST}
+      MYSQL_DATABASE: ${OSTICKET_DB_NAME}
+      MYSQL_USER: ${OSTICKET_DB_USER}
+      MYSQL_PASSWORD: ${OSTICKET_DB_PASSWORD}
+
+      INSTALL_SECRET: ${INSTALL_SECRET}
+      INSTALL_NAME: ${INSTALL_NAME}
+      INSTALL_URL: ${INSTALL_URL}
+      INSTALL_EMAIL: ${INSTALL_EMAIL}
+
+      ADMIN_FIRSTNAME: ${ADMIN_FIRSTNAME}
+      ADMIN_LASTNAME: ${ADMIN_LASTNAME}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+
+      CRON_INTERVAL: 5
+    ports:
+      - "8080:80"
+    volumes:
+      - osticket_data:/var/lib/osticket
+
+volumes:
+  osticket_data:

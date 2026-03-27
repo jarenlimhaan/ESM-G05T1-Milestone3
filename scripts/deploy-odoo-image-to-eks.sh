@@ -182,7 +182,9 @@ fi
 require_cmd terraform
 require_cmd aws
 require_cmd kubectl
-require_cmd docker
+if [[ "${SKIP_IMAGE_PUSH}" != "true" ]]; then
+  require_cmd docker
+fi
 
 if [[ "${PROVISION_INFRA}" == "true" ]]; then
   echo "Provisioning infrastructure with Terraform..."
@@ -230,6 +232,13 @@ aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}" >/de
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+if [[ -z "${TARGET_IMAGE}" && "${SKIP_IMAGE_PUSH}" == "true" ]]; then
+  TARGET_IMAGE="$(kubectl get deployment odoo-private -n odoo-private -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+fi
+if [[ -z "${TARGET_IMAGE}" && "${SKIP_IMAGE_PUSH}" == "true" ]]; then
+  echo "Error: --skip-image-push requires --target-image, or an existing odoo-private deployment image to reuse." >&2
+  exit 1
+fi
 if [[ -z "${TARGET_IMAGE}" ]]; then
   TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPO_NAME}:${IMAGE_TAG}"
 fi
@@ -293,7 +302,7 @@ if [[ "${SKIP_DEPLOY}" != "true" ]]; then
   fi
 
   echo "Deploying manifests with Odoo image ${TARGET_IMAGE}..."
-  "${SCRIPT_DIR}/deploy-k8s-apps.sh" "${DEPLOY_ARGS[@]}"
+  "${SCRIPT_DIR}/deploy-k8s-apps.sh" --skip-odoo-rollout-wait "${DEPLOY_ARGS[@]}"
 else
   if [[ -z "${ODOO_DB_PASSWORD}" ]]; then
     ODOO_DB_PASSWORD="$(kubectl get secret odoo-db -n odoo-private -o jsonpath='{.data.password}' | base64 --decode || true)"

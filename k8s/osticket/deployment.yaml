@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: osticket
-          image: campbellsoftwaresolutions/osticket:latest
+          image: "__OSTICKET_IMAGE__"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
@@ -31,6 +31,32 @@ spec:
                 secretKeyRef:
                   name: osticket-db
                   key: password
+            - name: INSTALL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: osticket-db
+                  key: install_secret
+            - name: INSTALL_NAME
+              value: "__OSTICKET_INSTALL_NAME__"
+            - name: INSTALL_URL
+              value: "__OSTICKET_INSTALL_URL__"
+            - name: INSTALL_EMAIL
+              value: "__OSTICKET_INSTALL_EMAIL__"
+            - name: ADMIN_FIRSTNAME
+              value: "__OSTICKET_ADMIN_FIRSTNAME__"
+            - name: ADMIN_LASTNAME
+              value: "__OSTICKET_ADMIN_LASTNAME__"
+            - name: ADMIN_EMAIL
+              value: "__OSTICKET_ADMIN_EMAIL__"
+            - name: ADMIN_USERNAME
+              value: "__OSTICKET_ADMIN_USERNAME__"
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: osticket-db
+                  key: admin_password
+            - name: CRON_INTERVAL
+              value: "__OSTICKET_CRON_INTERVAL__"
           resources:
             requests:
               cpu: 250m

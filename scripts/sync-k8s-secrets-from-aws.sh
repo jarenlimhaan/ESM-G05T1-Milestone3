@@ -8,13 +8,16 @@ Sync Kubernetes DB secrets from AWS Secrets Manager.
 Usage:
   ./scripts/sync-k8s-secrets-from-aws.sh \
     --region ap-southeast-1 \
-    --odoo-secret-id esm/prod/odoo-db-password \
-    --moodle-secret-id esm/prod/moodle-db-password \
-    --osticket-secret-id esm/prod/osticket-db-password
+    [--odoo-secret-id esm/prod/odoo-db-password] \
+    [--moodle-secret-id esm/prod/moodle-db-password] \
+    [--osticket-secret-id esm/prod/osticket-db-password] \
+    [--osticket-install-secret "<secret>"] \
+    [--osticket-admin-password "<password>"]
 
 Notes:
   - Secret value is read from SecretString as plain text password.
   - If --osticket-secret-id is omitted, Moodle password is reused for osTicket.
+  - osTicket install/admin secret defaults are read from .env (INSTALL_SECRET, ADMIN_PASSWORD).
 EOF
 }
 
@@ -25,10 +28,34 @@ require_cmd() {
   fi
 }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+read_dotenv_value() {
+  local key="$1"
+  local env_file="${REPO_ROOT}/.env"
+  local line=""
+  if [[ ! -f "${env_file}" ]]; then
+    return 0
+  fi
+  line="$(grep -E "^${key}=" "${env_file}" | tail -n 1 || true)"
+  if [[ -n "${line}" ]]; then
+    printf '%s' "${line#*=}" | tr -d '\r'
+  fi
+}
+
 REGION=""
-ODOO_SECRET_ID=""
-MOODLE_SECRET_ID=""
-OSTICKET_SECRET_ID=""
+ODOO_SECRET_ID="esm/prod/odoo-db-password"
+MOODLE_SECRET_ID="esm/prod/moodle-db-password"
+OSTICKET_SECRET_ID="esm/prod/osticket-db-password"
+OSTICKET_INSTALL_SECRET="$(read_dotenv_value INSTALL_SECRET)"
+if [[ -z "${OSTICKET_INSTALL_SECRET}" ]]; then
+  OSTICKET_INSTALL_SECRET="put-a-long-random-string-here-please-change-me"
+fi
+OSTICKET_ADMIN_PASSWORD="$(read_dotenv_value ADMIN_PASSWORD)"
+if [[ -z "${OSTICKET_ADMIN_PASSWORD}" ]]; then
+  OSTICKET_ADMIN_PASSWORD="ChangeThisAdminPassword123!"
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -48,6 +75,14 @@ while [[ $# -gt 0 ]]; do
       OSTICKET_SECRET_ID="$2"
       shift 2
       ;;
+    --osticket-install-secret)
+      OSTICKET_INSTALL_SECRET="$2"
+      shift 2
+      ;;
+    --osticket-admin-password)
+      OSTICKET_ADMIN_PASSWORD="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -60,8 +95,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "${REGION}" || -z "${ODOO_SECRET_ID}" || -z "${MOODLE_SECRET_ID}" ]]; then
-  echo "Error: --region, --odoo-secret-id, and --moodle-secret-id are required." >&2
+if [[ -z "${REGION}" ]]; then
+  echo "Error: --region is required." >&2
   usage
   exit 1
 fi
@@ -102,6 +137,8 @@ kubectl create secret generic moodle-db -n moodle-private \
 
 kubectl create secret generic osticket-db -n osticket-private \
   --from-literal=password="${OSTICKET_DB_PASSWORD}" \
+  --from-literal=install_secret="${OSTICKET_INSTALL_SECRET}" \
+  --from-literal=admin_password="${OSTICKET_ADMIN_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "Done. Restarting app deployments to pick up new secret values..."

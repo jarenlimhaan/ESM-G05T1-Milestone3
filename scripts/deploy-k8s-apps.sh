@@ -22,9 +22,21 @@ Usage:
     [--moodle-admin-password "Admin~1234"] \
     [--moodle-admin-email "admin@esmos.meals.sg"] \
     [--moodle-url "http://moodle.internal.esm.local"] \
+    [--osticket-image "<image-ref>"] \
     [--osticket-db-host "<host>"] \
     [--osticket-db-user moodle_admin] \
     [--osticket-db-name osticketdb] \
+    [--osticket-install-secret "<secret>"] \
+    [--osticket-install-name "My Helpdesk"] \
+    [--osticket-install-url "http://osticket.internal.esm.local"] \
+    [--osticket-install-email "helpdesk@example.com"] \
+    [--osticket-admin-firstname "Admin"] \
+    [--osticket-admin-lastname "User"] \
+    [--osticket-admin-email "admin@example.com"] \
+    [--osticket-admin-username "ostadmin"] \
+    [--osticket-admin-password "ChangeThisAdminPassword123!"] \
+    [--osticket-cron-interval 5] \
+    [--skip-odoo-rollout-wait] \
     [--keep-rendered-manifests] \
     [--provision-infra]
 
@@ -49,9 +61,33 @@ Options:
                          Moodle admin password (default: Admin~1234).
   --moodle-admin-email   Moodle admin email (default: admin@esmos.meals.sg).
   --moodle-url           Moodle URL (default: http://moodle.internal.esm.local).
+  --osticket-image       osTicket container image (default: campbellsoftwaresolutions/osticket:latest).
   --osticket-db-host     osTicket DB host. Defaults to Moodle DB host output.
   --osticket-db-user     osTicket DB user (default: moodle_admin).
   --osticket-db-name     osTicket DB name (default: osticketdb).
+  --osticket-install-secret
+                         osTicket install secret (default: INSTALL_SECRET in .env, then built-in value).
+  --osticket-install-name
+                         osTicket helpdesk name (default: INSTALL_NAME in .env, then "My Helpdesk").
+  --osticket-install-url
+                         osTicket install URL (default: INSTALL_URL in .env, then http://osticket.internal.esm.local).
+  --osticket-install-email
+                         osTicket install email (default: INSTALL_EMAIL in .env, then helpdesk@example.com).
+  --osticket-admin-firstname
+                         osTicket admin first name (default: ADMIN_FIRSTNAME in .env, then Admin).
+  --osticket-admin-lastname
+                         osTicket admin last name (default: ADMIN_LASTNAME in .env, then User).
+  --osticket-admin-email
+                         osTicket admin email (default: ADMIN_EMAIL in .env, then admin@example.com).
+  --osticket-admin-username
+                         osTicket admin username (default: ADMIN_USERNAME in .env, then ostadmin).
+  --osticket-admin-password
+                         osTicket admin password (default: ADMIN_PASSWORD in .env, then ChangeThisAdminPassword123!).
+  --osticket-cron-interval
+                         osTicket cron interval minutes (default: CRON_INTERVAL in .env, then 5).
+  --skip-odoo-rollout-wait
+                         Skip waiting for odoo-private/odoo-public rollout status.
+                         Useful when Odoo DB bootstrap is handled in a later step.
   --keep-rendered-manifests
                          Keep rendered temporary manifests for inspection.
   --provision-infra      Run terraform init + apply before kubectl apply.
@@ -104,6 +140,19 @@ ensure_moodle_db_is_complete() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+read_dotenv_value() {
+  local key="$1"
+  local env_file="${REPO_ROOT}/.env"
+  local line=""
+  if [[ ! -f "${env_file}" ]]; then
+    return 0
+  fi
+  line="$(grep -E "^${key}=" "${env_file}" | tail -n 1 || true)"
+  if [[ -n "${line}" ]]; then
+    printf '%s' "${line#*=}" | tr -d '\r'
+  fi
+}
+
 TERRAFORM_DIR="${REPO_ROOT}/terraform"
 K8S_DIR="${REPO_ROOT}/k8s"
 AWS_REGION=""
@@ -118,15 +167,60 @@ MOODLE_ADMIN_USER="admin"
 MOODLE_ADMIN_PASSWORD="Admin~1234"
 MOODLE_ADMIN_EMAIL="admin@esmos.meals.sg"
 MOODLE_URL="http://moodle.internal.esm.local"
+OSTICKET_IMAGE="$(read_dotenv_value OSTICKET_IMAGE)"
+if [[ -z "${OSTICKET_IMAGE}" ]]; then
+  OSTICKET_IMAGE="campbellsoftwaresolutions/osticket:latest"
+fi
 OSTICKET_DB_HOST=""
 OSTICKET_DB_USER="moodle_admin"
 OSTICKET_DB_PASSWORD=""
 OSTICKET_DB_NAME="osticketdb"
-ODOO_SECRET_ID=""
-MOODLE_SECRET_ID=""
-OSTICKET_SECRET_ID=""
+OSTICKET_INSTALL_SECRET="$(read_dotenv_value INSTALL_SECRET)"
+if [[ -z "${OSTICKET_INSTALL_SECRET}" ]]; then
+  OSTICKET_INSTALL_SECRET="put-a-long-random-string-here-please-change-me"
+fi
+OSTICKET_INSTALL_NAME="$(read_dotenv_value INSTALL_NAME)"
+if [[ -z "${OSTICKET_INSTALL_NAME}" ]]; then
+  OSTICKET_INSTALL_NAME="My Helpdesk"
+fi
+OSTICKET_INSTALL_URL="$(read_dotenv_value INSTALL_URL)"
+if [[ -z "${OSTICKET_INSTALL_URL}" ]]; then
+  OSTICKET_INSTALL_URL="http://osticket.internal.esm.local"
+fi
+OSTICKET_INSTALL_EMAIL="$(read_dotenv_value INSTALL_EMAIL)"
+if [[ -z "${OSTICKET_INSTALL_EMAIL}" ]]; then
+  OSTICKET_INSTALL_EMAIL="helpdesk@example.com"
+fi
+OSTICKET_ADMIN_FIRSTNAME="$(read_dotenv_value ADMIN_FIRSTNAME)"
+if [[ -z "${OSTICKET_ADMIN_FIRSTNAME}" ]]; then
+  OSTICKET_ADMIN_FIRSTNAME="Admin"
+fi
+OSTICKET_ADMIN_LASTNAME="$(read_dotenv_value ADMIN_LASTNAME)"
+if [[ -z "${OSTICKET_ADMIN_LASTNAME}" ]]; then
+  OSTICKET_ADMIN_LASTNAME="User"
+fi
+OSTICKET_ADMIN_EMAIL="$(read_dotenv_value ADMIN_EMAIL)"
+if [[ -z "${OSTICKET_ADMIN_EMAIL}" ]]; then
+  OSTICKET_ADMIN_EMAIL="admin@example.com"
+fi
+OSTICKET_ADMIN_USERNAME="$(read_dotenv_value ADMIN_USERNAME)"
+if [[ -z "${OSTICKET_ADMIN_USERNAME}" ]]; then
+  OSTICKET_ADMIN_USERNAME="ostadmin"
+fi
+OSTICKET_ADMIN_PASSWORD="$(read_dotenv_value ADMIN_PASSWORD)"
+if [[ -z "${OSTICKET_ADMIN_PASSWORD}" ]]; then
+  OSTICKET_ADMIN_PASSWORD="ChangeThisAdminPassword123!"
+fi
+OSTICKET_CRON_INTERVAL="$(read_dotenv_value CRON_INTERVAL)"
+if [[ -z "${OSTICKET_CRON_INTERVAL}" ]]; then
+  OSTICKET_CRON_INTERVAL="5"
+fi
+ODOO_SECRET_ID="esm/prod/odoo-db-password"
+MOODLE_SECRET_ID="esm/prod/moodle-db-password"
+OSTICKET_SECRET_ID="esm/prod/osticket-db-password"
 KEEP_RENDERED_MANIFESTS="false"
 PROVISION_INFRA="false"
+SKIP_ODOO_ROLLOUT_WAIT="false"
 RENDER_DIR=""
 
 while [[ $# -gt 0 ]]; do
@@ -183,6 +277,10 @@ while [[ $# -gt 0 ]]; do
       MOODLE_URL="$2"
       shift 2
       ;;
+    --osticket-image)
+      OSTICKET_IMAGE="$2"
+      shift 2
+      ;;
     --osticket-db-host)
       OSTICKET_DB_HOST="$2"
       shift 2
@@ -199,6 +297,46 @@ while [[ $# -gt 0 ]]; do
       OSTICKET_DB_NAME="$2"
       shift 2
       ;;
+    --osticket-install-secret)
+      OSTICKET_INSTALL_SECRET="$2"
+      shift 2
+      ;;
+    --osticket-install-name)
+      OSTICKET_INSTALL_NAME="$2"
+      shift 2
+      ;;
+    --osticket-install-url)
+      OSTICKET_INSTALL_URL="$2"
+      shift 2
+      ;;
+    --osticket-install-email)
+      OSTICKET_INSTALL_EMAIL="$2"
+      shift 2
+      ;;
+    --osticket-admin-firstname)
+      OSTICKET_ADMIN_FIRSTNAME="$2"
+      shift 2
+      ;;
+    --osticket-admin-lastname)
+      OSTICKET_ADMIN_LASTNAME="$2"
+      shift 2
+      ;;
+    --osticket-admin-email)
+      OSTICKET_ADMIN_EMAIL="$2"
+      shift 2
+      ;;
+    --osticket-admin-username)
+      OSTICKET_ADMIN_USERNAME="$2"
+      shift 2
+      ;;
+    --osticket-admin-password)
+      OSTICKET_ADMIN_PASSWORD="$2"
+      shift 2
+      ;;
+    --osticket-cron-interval)
+      OSTICKET_CRON_INTERVAL="$2"
+      shift 2
+      ;;
     --odoo-secret-id)
       ODOO_SECRET_ID="$2"
       shift 2
@@ -213,6 +351,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --keep-rendered-manifests)
       KEEP_RENDERED_MANIFESTS="true"
+      shift
+      ;;
+    --skip-odoo-rollout-wait)
+      SKIP_ODOO_ROLLOUT_WAIT="true"
       shift
       ;;
     --provision-infra)
@@ -313,7 +455,11 @@ export ODOO_IMAGE
 export ODOO_DB_NAME
 export MOODLE_DB_HOST MOODLE_DB_USER MOODLE_DB_NAME MOODLE_DB_PASSWORD
 export MOODLE_IMAGE MOODLE_ADMIN_USER MOODLE_ADMIN_PASSWORD MOODLE_ADMIN_EMAIL MOODLE_URL
+export OSTICKET_IMAGE
 export OSTICKET_DB_HOST OSTICKET_DB_USER OSTICKET_DB_NAME OSTICKET_DB_PASSWORD
+export OSTICKET_INSTALL_SECRET OSTICKET_INSTALL_NAME OSTICKET_INSTALL_URL OSTICKET_INSTALL_EMAIL
+export OSTICKET_ADMIN_FIRSTNAME OSTICKET_ADMIN_LASTNAME OSTICKET_ADMIN_EMAIL OSTICKET_ADMIN_USERNAME OSTICKET_ADMIN_PASSWORD
+export OSTICKET_CRON_INTERVAL
 export EFS_ID EFS_ACCESS_POINT_ID
 export CLUSTER_NAME CLUSTER_AUTOSCALER_ROLE_ARN EKS_NODE_GROUP_ASG_NAME
 export EKS_NODE_COUNT_MIN EKS_NODE_COUNT_MAX
@@ -334,10 +480,21 @@ while IFS= read -r -d '' file; do
     s/__MOODLE_ADMIN_PASSWORD__/$ENV{MOODLE_ADMIN_PASSWORD}/g;
     s/__MOODLE_ADMIN_EMAIL__/$ENV{MOODLE_ADMIN_EMAIL}/g;
     s#__MOODLE_URL__#$ENV{MOODLE_URL}#g;
+    s#__OSTICKET_IMAGE__#$ENV{OSTICKET_IMAGE}#g;
     s/__OSTICKET_DB_HOST__/$ENV{OSTICKET_DB_HOST}/g;
     s/__OSTICKET_DB_USER__/$ENV{OSTICKET_DB_USER}/g;
     s/__OSTICKET_DB_NAME__/$ENV{OSTICKET_DB_NAME}/g;
     s/__OSTICKET_DB_PASSWORD__/$ENV{OSTICKET_DB_PASSWORD}/g;
+    s#__OSTICKET_INSTALL_SECRET__#$ENV{OSTICKET_INSTALL_SECRET}#g;
+    s#__OSTICKET_INSTALL_NAME__#$ENV{OSTICKET_INSTALL_NAME}#g;
+    s#__OSTICKET_INSTALL_URL__#$ENV{OSTICKET_INSTALL_URL}#g;
+    s#__OSTICKET_INSTALL_EMAIL__#$ENV{OSTICKET_INSTALL_EMAIL}#g;
+    s#__OSTICKET_ADMIN_FIRSTNAME__#$ENV{OSTICKET_ADMIN_FIRSTNAME}#g;
+    s#__OSTICKET_ADMIN_LASTNAME__#$ENV{OSTICKET_ADMIN_LASTNAME}#g;
+    s#__OSTICKET_ADMIN_EMAIL__#$ENV{OSTICKET_ADMIN_EMAIL}#g;
+    s#__OSTICKET_ADMIN_USERNAME__#$ENV{OSTICKET_ADMIN_USERNAME}#g;
+    s#__OSTICKET_ADMIN_PASSWORD__#$ENV{OSTICKET_ADMIN_PASSWORD}#g;
+    s#__OSTICKET_CRON_INTERVAL__#$ENV{OSTICKET_CRON_INTERVAL}#g;
     s/__EFS_ID__/$ENV{EFS_ID}/g;
     s/__EFS_ACCESS_POINT_ID__/$ENV{EFS_ACCESS_POINT_ID}/g;
     s/__CLUSTER_NAME__/$ENV{CLUSTER_NAME}/g;
@@ -363,9 +520,13 @@ kubectl rollout restart deployment/odoo-private-gateway -n odoo-private
 kubectl rollout restart deployment/odoo-public -n odoo-public
 kubectl rollout restart deployment/moodle -n moodle-private
 kubectl rollout restart deployment/osticket -n osticket-private
-kubectl rollout status deployment/odoo-private -n odoo-private --timeout=300s
-kubectl rollout status deployment/odoo-private-gateway -n odoo-private --timeout=300s
-kubectl rollout status deployment/odoo-public -n odoo-public --timeout=300s
+if [[ "${SKIP_ODOO_ROLLOUT_WAIT}" != "true" ]]; then
+  kubectl rollout status deployment/odoo-private -n odoo-private --timeout=300s
+  kubectl rollout status deployment/odoo-private-gateway -n odoo-private --timeout=300s
+  kubectl rollout status deployment/odoo-public -n odoo-public --timeout=300s
+else
+  echo "Skipping Odoo rollout wait (bootstrap expected to run afterwards)."
+fi
 kubectl rollout status deployment/moodle -n moodle-private --timeout=300s
 kubectl rollout status deployment/osticket -n osticket-private --timeout=300s
 
