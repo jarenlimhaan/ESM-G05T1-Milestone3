@@ -95,6 +95,8 @@ fi
 require_cmd terraform
 require_cmd aws
 
+"${SCRIPT_DIR}/terraform-init.sh" "${TERRAFORM_DIR}"
+
 AWS_REGION="$(terraform -chdir="${TERRAFORM_DIR}" output -raw aws_region 2>/dev/null || true)"
 CLUSTER_NAME="$(terraform -chdir="${TERRAFORM_DIR}" output -raw eks_cluster_name 2>/dev/null || true)"
 

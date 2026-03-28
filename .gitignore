@@ -1,2 +1,7 @@
 .env
 external_addons/
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
+terraform/backend.hcl
