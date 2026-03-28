@@ -95,6 +95,10 @@ fi
 require_cmd terraform
 require_cmd aws
 
+# Fresh CI runners don't have .terraform modules initialized yet.
+echo "Initializing Terraform in ${TERRAFORM_DIR}..."
+terraform -chdir="${TERRAFORM_DIR}" init -input=false >/dev/null
+
 AWS_REGION="$(terraform -chdir="${TERRAFORM_DIR}" output -raw aws_region 2>/dev/null || true)"
 CLUSTER_NAME="$(terraform -chdir="${TERRAFORM_DIR}" output -raw eks_cluster_name 2>/dev/null || true)"
 
