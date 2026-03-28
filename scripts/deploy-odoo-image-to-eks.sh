@@ -188,8 +188,10 @@ fi
 
 if [[ "${PROVISION_INFRA}" == "true" ]]; then
   echo "Provisioning infrastructure with Terraform..."
-  terraform -chdir="${TERRAFORM_DIR}" init
+  "${SCRIPT_DIR}/terraform-init.sh" "${TERRAFORM_DIR}"
   terraform -chdir="${TERRAFORM_DIR}" apply -auto-approve
+else
+  "${SCRIPT_DIR}/terraform-init.sh" "${TERRAFORM_DIR}"
 fi
 
 if [[ "${SKIP_DB_RESTORE}" != "true" && ! -f "${SQL_DUMP_FILE}" ]]; then

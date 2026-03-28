@@ -62,6 +62,7 @@ fi
 require_cmd terraform
 require_cmd aws
 require_cmd perl
+"${SCRIPT_DIR}/terraform-init.sh" "${TERRAFORM_DIR}"
 
 extract_state_attr() {
   local state_json="$1"
