@@ -43,35 +43,36 @@ kubectl version --client
 ./scripts/destroy-everything.sh
 ```
 
-### 2. Rebuild Full Stack (Recommended)
+### 2. Deploy Or Rebuild Automatically (Recommended)
 
 This is the default workflow now. It will:
-- destroy old stack (unless you pass `--skip-destroy`),
-- provision infra,
-- build/push your local Odoo image to ECR,
-- deploy Kubernetes manifests,
-- run bootstrap tasks (Odoo DB restore + filestore sync + module upgrade),
-- auto-repair Moodle DB if install is partial (`mdl_config.version` missing).
+- check whether infra is already up,
+- if up: deploy/re-apply Kubernetes apps,
+- if down: rebuild from scratch.
 
 ```bash
-./scripts/rebuild-from-scratch.sh
+./scripts/deploy-or-rebuild.sh \
+  --skip-image-push \
+  --aws-region ap-southeast-1
 ```
 
-If Docker is unavailable and you already have a valid image in ECR:
+If `--skip-image-push` is set and no `--target-image` is provided, the script auto-resolves the latest tagged image from ECR repo `esm/odoo17`.
+
+If you want to force a full rebuild path directly, use:
+
+```bash
+./scripts/rebuild-from-scratch.sh \
+  --skip-image-push \
+  --target-image "<your-ecr-image:tag>"
+```
+
+If you want the direct Odoo deploy/bootstrap script instead of the wrapper:
 
 ```bash
 ./scripts/deploy-odoo-image-to-eks.sh \
   --skip-image-push \
   --target-image "<your-ecr-image:tag>" \
   --provision-infra
-```
-
-Current known-good example:
-
-```bash
-./scripts/deploy-odoo-image-to-eks.sh \
-  --skip-image-push \
-  --target-image 233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/odoo17:20260327-223509
 ```
 
 ### 3. Deploy Infra + Kubernetes Apps (Direct Script)
@@ -115,10 +116,7 @@ Import the generated `.ovpn` into AWS VPN Client, connect, then access internal 
 ### Redeploy Kubernetes manifests after changes
 
 ```bash
-./scripts/deploy-k8s-apps.sh \
-  --odoo-db-password "OdooPassword" \
-  --moodle-db-password "MoodlePassword" \
-  --osticket-db-password "MoodlePassword"
+./scripts/deploy-or-rebuild.sh --aws-region ap-southeast-1
 ```
 
 ### Sync K8s secrets from AWS Secrets Manager
