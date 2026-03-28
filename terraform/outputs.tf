@@ -436,9 +436,12 @@ AUDIT:
 ================================================================================
 
 1. CONNECT TO VPN:
-   - Run: aws ec2 export-client-vpn-client-configuration --client-vpn-endpoint-id ${module.vpn.vpn_endpoint_id} --output text > vpn-config.ovpn
-   - Open AWS VPN Client and import the configuration
-   - Connect to access internal resources
+   - Run: ./scripts/generate-vpn-profile.sh --output ~/Downloads/esm-vpn-config-fixed.ovpn
+   - This script assembles a complete .ovpn profile (CA cert + client cert + client key).
+   - Do NOT use aws ec2 export-client-vpn-client-configuration directly -- that only produces
+     a partial config missing the client certificate and key and cannot be imported.
+   - Open AWS VPN Client, click File > Manage Profiles > Add Profile, select the generated file.
+   - Connect to access internal resources.
 
 2. CONFIGURE KUBECTL:
    - Run: aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.aws_region}
