@@ -9,12 +9,41 @@
 # ==============================================================================
 # Define common values and tags that are used across modules.
 
-data "aws_secretsmanager_secret_version" "odoo_db_password" {
-  secret_id = var.odoo_db_password_secret_id
+# ==============================================================================
+# Secrets Manager — Terraform owns and creates all secrets
+# ==============================================================================
+
+resource "aws_secretsmanager_secret" "odoo_db_password" {
+  name                    = var.odoo_db_password_secret_id
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
 }
 
-data "aws_secretsmanager_secret_version" "moodle_db_password" {
-  secret_id = var.moodle_db_password_secret_id
+resource "aws_secretsmanager_secret_version" "odoo_db_password" {
+  secret_id     = aws_secretsmanager_secret.odoo_db_password.id
+  secret_string = var.odoo_db_password
+}
+
+resource "aws_secretsmanager_secret" "moodle_db_password" {
+  name                    = var.moodle_db_password_secret_id
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "moodle_db_password" {
+  secret_id     = aws_secretsmanager_secret.moodle_db_password.id
+  secret_string = var.moodle_db_password
+}
+
+resource "aws_secretsmanager_secret" "osticket_db_password" {
+  name                    = var.osticket_db_password_secret_id
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "osticket_db_password" {
+  secret_id     = aws_secretsmanager_secret.osticket_db_password.id
+  secret_string = var.osticket_db_password
 }
 
 locals {
@@ -42,8 +71,8 @@ locals {
   moodle_internal_fqdn   = "${var.moodle_internal_record_name}.${var.private_route53_zone_name}"
   osticket_internal_fqdn = "${var.osticket_internal_record_name}.${var.private_route53_zone_name}"
 
-  odoo_db_password_resolved   = coalesce(try(data.aws_secretsmanager_secret_version.odoo_db_password.secret_string, null), var.odoo_db_password)
-  moodle_db_password_resolved = coalesce(try(data.aws_secretsmanager_secret_version.moodle_db_password.secret_string, null), var.moodle_db_password)
+  odoo_db_password_resolved   = aws_secretsmanager_secret_version.odoo_db_password.secret_string
+  moodle_db_password_resolved = aws_secretsmanager_secret_version.moodle_db_password.secret_string
 }
 
 # ==============================================================================
@@ -418,8 +447,96 @@ module "vpn" {
 }
 
 # ==============================================================================
-# Kubernetes Workloads
+# Kubernetes Secrets Bridge
 # ==============================================================================
-# App workloads are intentionally deployed outside Terraform.
-# Apply manifests from the repository's /k8s directory with kubectl after
-# infrastructure provisioning completes.
+# Terraform reads the EKS cluster credentials and pushes secrets directly into
+# the appropriate namespaces. This replaces the placeholder substitution in
+# deploy-k8s-apps.sh for all password/secret values.
+
+data "aws_eks_cluster_auth" "main" {
+  name = module.eks.cluster_name
+}
+
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority)
+  token                  = data.aws_eks_cluster_auth.main.token
+}
+
+# Namespaces — Terraform creates them so secrets can be placed immediately.
+# kubectl apply -k will no-op on these since they already exist.
+
+resource "kubernetes_namespace" "odoo_public" {
+  metadata {
+    name = "odoo-public"
+    labels = { "app.kubernetes.io/part-of" = "esm" }
+  }
+  depends_on = [module.eks]
+}
+
+resource "kubernetes_namespace" "odoo_private" {
+  metadata {
+    name = "odoo-private"
+    labels = { "app.kubernetes.io/part-of" = "esm" }
+  }
+  depends_on = [module.eks]
+}
+
+resource "kubernetes_namespace" "moodle_private" {
+  metadata {
+    name = "moodle-private"
+    labels = { "app.kubernetes.io/part-of" = "esm" }
+  }
+  depends_on = [module.eks]
+}
+
+resource "kubernetes_namespace" "osticket_private" {
+  metadata {
+    name = "osticket-private"
+    labels = { "app.kubernetes.io/part-of" = "esm" }
+  }
+  depends_on = [module.eks]
+}
+
+resource "kubernetes_secret" "odoo_db_odoo_public" {
+  metadata {
+    name      = "odoo-db"
+    namespace = kubernetes_namespace.odoo_public.metadata[0].name
+  }
+  data = {
+    password = aws_secretsmanager_secret_version.odoo_db_password.secret_string
+  }
+}
+
+resource "kubernetes_secret" "odoo_db_odoo_private" {
+  metadata {
+    name      = "odoo-db"
+    namespace = kubernetes_namespace.odoo_private.metadata[0].name
+  }
+  data = {
+    password = aws_secretsmanager_secret_version.odoo_db_password.secret_string
+  }
+}
+
+resource "kubernetes_secret" "moodle_db" {
+  metadata {
+    name      = "moodle-db"
+    namespace = kubernetes_namespace.moodle_private.metadata[0].name
+  }
+  data = {
+    password = aws_secretsmanager_secret_version.moodle_db_password.secret_string
+  }
+}
+
+resource "kubernetes_secret" "osticket_db" {
+  metadata {
+    name      = "osticket-db"
+    namespace = kubernetes_namespace.osticket_private.metadata[0].name
+  }
+  data = {
+    password       = aws_secretsmanager_secret_version.osticket_db_password.secret_string
+    install_secret = var.osticket_install_secret
+    admin_password = var.osticket_admin_password
+  }
+}
+
