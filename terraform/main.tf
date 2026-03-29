@@ -225,9 +225,25 @@ module "monitoring" {
   alert_email = var.alert_email
 
   # Resources to monitor
-  odoo_rds_id   = module.rds.odoo_instance_id
-  moodle_rds_id = module.rds.moodle_instance_id
-  efs_id        = module.efs.efs_id
+  odoo_rds_id                             = module.rds.odoo_instance_id
+  moodle_rds_id                           = module.rds.moodle_instance_id
+  efs_id                                  = module.efs.efs_id
+  eks_cluster_name                        = module.eks.cluster_name
+  moodle_namespace                        = "moodle-private"
+  moodle_pod_cpu_threshold                = 80
+  moodle_pod_memory_threshold             = 80
+  odoo_namespaces                         = ["odoo-public", "odoo-private"]
+  odoo_pod_cpu_threshold                  = 70
+  monitored_namespaces                    = ["odoo-public", "odoo-private", "moodle-private", "osticket-private"]
+  pod_restart_threshold                   = 3
+  alb_5xx_rate_threshold_percent          = 1
+  public_alb_arn_suffix                   = module.alb_public.alb_arn_suffix
+  internal_alb_arn_suffix                 = module.alb_internal.alb_arn_suffix
+  public_odoo_target_group_arn_suffix     = module.alb_public.target_group_arn_suffix_odoo
+  internal_moodle_target_group_arn_suffix = module.alb_internal.target_group_arn_suffix_moodle
+  eks_node_cpu_threshold                  = 85
+  eks_node_memory_threshold               = 85
+  monthly_budget_limit_usd                = var.monthly_budget_limit_usd
 
   enable_monitoring = var.enable_monitoring
 

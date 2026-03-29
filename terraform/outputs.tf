@@ -460,7 +460,7 @@ AUDIT:
 
 4. BOOTSTRAP ODOO DATA (required after every fresh deploy):
    - Run: ./scripts/deploy-odoo-image-to-eks.sh --skip-image-push --target-image odoo:17 --skip-deploy --skip-module-upgrade
-   - This restores the SQL dump (odoo17/odoo.sql.gz) into RDS and syncs filestore/ into EFS.
+   - This restores the SQL dump (data/odoo17/odoo.sql.gz) into RDS and syncs filestore/ into EFS.
    - Without this step Odoo will start but have no real data.
    - Fix Moodle installhijacked error after first login:
        kubectl run mysql-fix --image=mysql:8.0 --restart=Never --rm -it -n moodle-private -- \

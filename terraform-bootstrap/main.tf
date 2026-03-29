@@ -31,7 +31,7 @@ provider "aws" {
 # S3 Bucket — stores the .tfstate file
 # ------------------------------------------------------------------------------
 resource "aws_s3_bucket" "tf_state" {
-  bucket = "esm-enterprise-prod-tf-state"
+  bucket = "esm-enterprise-prod-tf-state-jar"
 
   # Prevent accidental deletion via terraform destroy
   lifecycle {

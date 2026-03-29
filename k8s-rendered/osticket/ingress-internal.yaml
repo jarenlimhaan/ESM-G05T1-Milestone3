@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: osticket-internal
+  namespace: osticket-private
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: esm-internal
+    alb.ingress.kubernetes.io/group.order: "30"
+    alb.ingress.kubernetes.io/healthcheck-path: /osticket/
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /osticket
+            pathType: Prefix
+            backend:
+              service:
+                name: osticket
+                port:
+                  number: 80

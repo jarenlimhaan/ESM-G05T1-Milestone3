@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: odoo-private-backend
+  namespace: odoo-private
+spec:
+  type: ClusterIP
+  selector:
+    app: odoo-private
+  ports:
+    - port: 80
+      targetPort: 8069
+      protocol: TCP

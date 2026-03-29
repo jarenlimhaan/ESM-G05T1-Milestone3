@@ -9,7 +9,7 @@ spec:
   source:
     repoURL: https://github.com/jarenlimhaan/ESM-G05T1-Milestone3
     targetRevision: main      # track the main branch
-    path: k8s                 # folder ArgoCD will deploy from (has kustomization.yaml)
+    path: k8s-rendered        # rendered folder with no placeholders
 
   destination:
     server: https://kubernetes.default.svc   # "this cluster" (in-cluster)
