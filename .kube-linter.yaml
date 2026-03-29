@@ -1,9 +1,12 @@
 checks:
-  # Only enforce checks that directly affect runtime correctness.
-  # - Resource limits/requests: required for HPA to function and for scheduler bin-packing.
-  # - Probes: required for traffic routing and self-healing to work correctly.
-  include:
-    - "unset-cpu-requirements"
-    - "unset-memory-requirements"
-    - "no-liveness-probe"
-    - "no-readiness-probe"
+  # Run default checks (includes unset-cpu-requirements, unset-memory-requirements,
+  # no-liveness-probe, no-readiness-probe) then exclude false positives.
+  exclude:
+    # Odoo, Moodle, osTicket legitimately run as root
+    - "run-as-non-root"
+    # All three apps write to disk — read-only root fs would break them
+    - "no-read-only-root-fs"
+    # __PLACEHOLDER__ images are substituted at deploy time, not a real tag problem
+    - "latest-tag"
+    # Gateway replicas=2 on a small cluster — anti-affinity not required
+    - "no-anti-affinity"

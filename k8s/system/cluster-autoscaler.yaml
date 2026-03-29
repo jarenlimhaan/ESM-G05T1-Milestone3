@@ -122,6 +122,8 @@ spec:
         app: cluster-autoscaler
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+        ignore-check.kube-linter.io/no-liveness-probe: "Third-party system component — probes not applicable"
+        ignore-check.kube-linter.io/no-readiness-probe: "Third-party system component — probes not applicable"
     spec:
       serviceAccountName: cluster-autoscaler
       priorityClassName: system-cluster-critical
