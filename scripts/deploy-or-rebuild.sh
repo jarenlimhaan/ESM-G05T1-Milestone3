@@ -101,8 +101,6 @@ fi
 require_cmd terraform
 require_cmd aws
 
-"${SCRIPT_DIR}/terraform-init.sh" "${TERRAFORM_DIR}"
-
 cluster_name=""
 if terraform -chdir="${TERRAFORM_DIR}" output -raw eks_cluster_name >/dev/null 2>&1; then
   cluster_name="$(terraform -chdir="${TERRAFORM_DIR}" output -raw eks_cluster_name)"

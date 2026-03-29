@@ -1,5 +1,0 @@
-bucket         = "your-terraform-state-bucket"
-key            = "esm/prod/terraform.tfstate"
-region         = "ap-southeast-1"
-dynamodb_table = "your-terraform-lock-table"
-encrypt        = true

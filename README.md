@@ -35,35 +35,6 @@ terraform -version
 kubectl version --client
 ```
 
-## Terraform State (Important for CI + Manual Destroy)
-
-If you deploy using GitHub Actions and also want local commands (for example `terraform output` or `./scripts/destroy-everything.sh`) to see the same resources, use a shared remote state backend.
-
-1. Copy backend example:
-
-```bash
-cp terraform/backend.hcl.example terraform/backend.hcl
-```
-
-2. Edit `terraform/backend.hcl` with your real S3 bucket/table values.
-
-3. Initialize and migrate local state (one-time):
-
-```bash
-terraform -chdir=terraform init -migrate-state -reconfigure -backend-config=backend.hcl
-```
-
-4. In GitHub repo variables, set:
-- `TF_STATE_BUCKET`
-- `TF_STATE_KEY` (optional, default: `esm/prod/terraform.tfstate`)
-- `TF_STATE_LOCK_TABLE` (optional but recommended)
-
-Notes:
-- `terraform/backend.hcl` is gitignored.
-- Scripts now auto-initialize Terraform:
-  - with `backend.hcl` -> remote state mode
-  - without `backend.hcl` -> local state mode
-
 ## Quick Start (From Scratch)
 
 ### 1. (Optional) Tear Down Existing Stack First
