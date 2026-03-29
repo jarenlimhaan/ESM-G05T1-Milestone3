@@ -50,13 +50,13 @@ spec:
               mountPath: /var/www/html
             - name: moodle-data
               mountPath: /var/moodledata
-          # resources:
-          #   requests:
-          #     cpu: 250m
-          #     memory: 512Mi
-          #   limits:
-          #     cpu: 1000m
-          #     memory: 1Gi
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
           readinessProbe:
             tcpSocket:
               port: 80
