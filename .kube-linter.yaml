@@ -1,6 +1,6 @@
 checks:
-  # Run default checks (includes unset-cpu-requirements, unset-memory-requirements,
-  # no-liveness-probe, no-readiness-probe) then exclude false positives.
+  addAllBuiltIn: true
+  # Run all built-in checks, then exclude false positives for this project.
   exclude:
     # Odoo, Moodle, osTicket legitimately run as root
     - "run-as-non-root"
