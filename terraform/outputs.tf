@@ -162,7 +162,7 @@ output "application_access_urls" {
     odoo_public       = module.dns.odoo_public_fqdn != null ? "http://${module.dns.odoo_public_fqdn}" : "http://${module.alb_public.alb_dns_name}"
     odoo_internal     = module.dns.odoo_internal_fqdn != null ? "http://${module.dns.odoo_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/odoo"
     moodle_internal   = module.dns.moodle_internal_fqdn != null ? "http://${module.dns.moodle_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/moodle"
-    osticket_internal = module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/osticket"
+    osticket_internal = module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}/scp/" : "http://${module.alb_internal.alb_dns_name}/osticket/scp/"
   }
 }
 
@@ -264,7 +264,7 @@ To connect to the VPN:
 5. After connection, access applications:
    - Odoo Internal:  ${module.dns.odoo_internal_fqdn != null ? "http://${module.dns.odoo_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/odoo"}
    - Moodle Internal: ${module.dns.moodle_internal_fqdn != null ? "http://${module.dns.moodle_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/moodle"}
-   - osTicket Internal: ${module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/osticket"}
+   - osTicket Internal: ${module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}/scp/" : "http://${module.alb_internal.alb_dns_name}/osticket/scp/"}
 EOT
 }
 
@@ -401,7 +401,7 @@ LOAD BALANCING:
   Odoo Public URL: ${module.dns.odoo_public_fqdn != null ? "http://${module.dns.odoo_public_fqdn}" : "http://${module.alb_public.alb_dns_name}"}
   Odoo Internal URL: ${module.dns.odoo_internal_fqdn != null ? "http://${module.dns.odoo_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/odoo"}
   Moodle Internal URL: ${module.dns.moodle_internal_fqdn != null ? "http://${module.dns.moodle_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/moodle"}
-  osTicket Internal URL: ${module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/osticket"}
+  osTicket Internal URL: ${module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}/scp/" : "http://${module.alb_internal.alb_dns_name}/osticket/scp/"}
   Odoo Public DNS (Route53): ${coalesce(module.dns.odoo_public_fqdn, "not-configured")}
   Odoo Internal DNS (Route53): ${coalesce(module.dns.odoo_internal_fqdn, "not-configured")}
   Moodle Internal DNS (Route53): ${coalesce(module.dns.moodle_internal_fqdn, "not-configured")}
@@ -446,14 +446,28 @@ AUDIT:
 2. CONFIGURE KUBECTL:
    - Run: aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.aws_region}
 
-3. VERIFY APPLICATIONS:
-   - Check kubectl get pods -n esm
+3. DEPLOY AND VERIFY APPLICATIONS:
+   - Run: ./scripts/deploy-k8s-apps.sh --odoo-image odoo:17 --skip-odoo-rollout-wait
+   - Then check pods per namespace:
+       kubectl get pods -n odoo-public
+       kubectl get pods -n odoo-private
+       kubectl get pods -n moodle-private
+       kubectl get pods -n osticket-private
    - Access Odoo Public: ${module.dns.odoo_public_fqdn != null ? "http://${module.dns.odoo_public_fqdn}" : "http://${module.alb_public.alb_dns_name}"}
    - Access Odoo Internal: ${module.dns.odoo_internal_fqdn != null ? "http://${module.dns.odoo_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/odoo"}
    - Access Moodle Internal: ${module.dns.moodle_internal_fqdn != null ? "http://${module.dns.moodle_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/moodle"}
-   - Access osTicket Internal: ${module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/osticket"}
+   - osTicket Internal: ${module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}/scp/" : "http://${module.alb_internal.alb_dns_name}/osticket/scp/"}
 
-4. VERIFY BACKUPS:
+4. BOOTSTRAP ODOO DATA (required after every fresh deploy):
+   - Run: ./scripts/deploy-odoo-image-to-eks.sh --skip-image-push --target-image odoo:17 --skip-deploy --skip-module-upgrade
+   - This restores the SQL dump (odoo17/odoo.sql.gz) into RDS and syncs filestore/ into EFS.
+   - Without this step Odoo will start but have no real data.
+   - Fix Moodle installhijacked error after first login:
+       kubectl run mysql-fix --image=mysql:8.0 --restart=Never --rm -it -n moodle-private -- \
+         mysql -h <moodle-rds-host> -u moodle_admin -p<moodle-password> moodledb \
+         -e "UPDATE mdl_user SET lastip='' WHERE username='admin';"
+
+5. VERIFY BACKUPS:
    - Navigate to AWS Backup console
    - Check backup jobs and vault status
 
