@@ -468,7 +468,7 @@ provider "kubernetes" {
 
 resource "kubernetes_namespace" "odoo_public" {
   metadata {
-    name = "odoo-public"
+    name   = "odoo-public"
     labels = { "app.kubernetes.io/part-of" = "esm" }
   }
   depends_on = [module.eks]
@@ -476,7 +476,7 @@ resource "kubernetes_namespace" "odoo_public" {
 
 resource "kubernetes_namespace" "odoo_private" {
   metadata {
-    name = "odoo-private"
+    name   = "odoo-private"
     labels = { "app.kubernetes.io/part-of" = "esm" }
   }
   depends_on = [module.eks]
@@ -484,7 +484,7 @@ resource "kubernetes_namespace" "odoo_private" {
 
 resource "kubernetes_namespace" "moodle_private" {
   metadata {
-    name = "moodle-private"
+    name   = "moodle-private"
     labels = { "app.kubernetes.io/part-of" = "esm" }
   }
   depends_on = [module.eks]
@@ -492,7 +492,7 @@ resource "kubernetes_namespace" "moodle_private" {
 
 resource "kubernetes_namespace" "osticket_private" {
   metadata {
-    name = "osticket-private"
+    name   = "osticket-private"
     labels = { "app.kubernetes.io/part-of" = "esm" }
   }
   depends_on = [module.eks]
