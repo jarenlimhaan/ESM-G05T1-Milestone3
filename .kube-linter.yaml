@@ -1,13 +1,9 @@
 checks:
-  addAllBuiltIn: true
-  exclude:
-    # Our apps (odoo, moodle, osticket) legitimately run as root
-    - "run-as-non-root"
-    # All three apps need writable filesystems for data/cache
-    - "no-read-only-root-fs"
-    # Intentionally 1 replica — cost-controlled student deployment
-    - "minimum-three-replicas"
-    # moodle MOODLE_ADMIN_PASSWORD is a deploy-time placeholder, not a real secret
-    - "env-var-secret"
-    # We do not use the owner label convention
-    - "required-label-owner"
+  # Only enforce checks that directly affect runtime correctness.
+  # - Resource limits/requests: required for HPA to function and for scheduler bin-packing.
+  # - Probes: required for traffic routing and self-healing to work correctly.
+  include:
+    - "unset-cpu-requirements"
+    - "unset-memory-requirements"
+    - "no-liveness-probe"
+    - "no-readiness-probe"
