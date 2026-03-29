@@ -46,12 +46,13 @@ jobs:
           aws-region:            ap-southeast-1
 
       # -----------------------------------------------------------------------
-      # 3. Install Terraform
+      # 3. Install Terraform (wrapper=true enables stdout/stderr capture)
       # -----------------------------------------------------------------------
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: true
 
       # -----------------------------------------------------------------------
       # 4. Check formatting — fails the PR if any .tf file is not formatted
@@ -77,7 +78,13 @@ jobs:
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
         id: plan
-        run: terraform plan -no-color -input=false
+        run: |
+          terraform plan -no-color -input=false \
+            -var="odoo_db_password=placeholder" \
+            -var="moodle_db_password=placeholder" \
+            -var="osticket_db_password=placeholder" \
+            -var="osticket_install_secret=placeholder" \
+            -var="osticket_admin_password=placeholder"
         continue-on-error: true   # post comment even if plan fails
 
       - name: Post Plan as PR Comment
@@ -85,10 +92,18 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const output = `#### Terraform Plan 📋
+            const stdout = `${{ steps.plan.outputs.stdout }}`;
+            const stderr = `${{ steps.plan.outputs.stderr }}`;
+            const output = `#### Terraform Plan 📋 \`${{ steps.plan.outcome }}\`
+            <details><summary>Show Plan</summary>
+
+            \`\`\`terraform
+            ${stdout}
             \`\`\`
-            ${{ steps.plan.outputs.stdout }}
-            \`\`\`
+
+            </details>
+
+            ${stderr ? `<details><summary>Errors</summary>\n\n\`\`\`\n${stderr}\n\`\`\`\n\n</details>` : ''}
             *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -106,4 +121,10 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: terraform apply -auto-approve -input=false
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var="odoo_db_password=${{ secrets.ODOO_DB_PASSWORD }}" \
+            -var="moodle_db_password=${{ secrets.MOODLE_DB_PASSWORD }}" \
+            -var="osticket_db_password=${{ secrets.OSTICKET_DB_PASSWORD }}" \
+            -var="osticket_install_secret=${{ secrets.OSTICKET_INSTALL_SECRET }}" \
+            -var="osticket_admin_password=${{ secrets.OSTICKET_ADMIN_PASSWORD }}"
