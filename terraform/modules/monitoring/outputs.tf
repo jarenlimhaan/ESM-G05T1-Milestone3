@@ -30,6 +30,16 @@ output "alarm_arns" {
     aws_cloudwatch_metric_alarm.rds_storage_low[*].arn,
     aws_cloudwatch_metric_alarm.rds_connection_high[*].arn,
     aws_cloudwatch_metric_alarm.efs_burst_credit_low[*].arn,
-    aws_cloudwatch_metric_alarm.efs_connection_high[*].arn
+    aws_cloudwatch_metric_alarm.efs_connection_high[*].arn,
+    aws_cloudwatch_metric_alarm.moodle_pod_cpu_high[*].arn,
+    aws_cloudwatch_metric_alarm.moodle_pod_memory_high[*].arn,
+    aws_cloudwatch_metric_alarm.public_alb_5xx_rate_high[*].arn,
+    aws_cloudwatch_metric_alarm.internal_alb_5xx_rate_high[*].arn,
+    aws_cloudwatch_metric_alarm.odoo_public_unhealthy_hosts[*].arn,
+    aws_cloudwatch_metric_alarm.moodle_internal_unhealthy_hosts[*].arn,
+    aws_cloudwatch_metric_alarm.eks_node_cpu_high[*].arn,
+    aws_cloudwatch_metric_alarm.eks_node_memory_high[*].arn,
+    [for alarm in aws_cloudwatch_metric_alarm.pod_restarts_high : alarm.arn],
+    [for alarm in aws_cloudwatch_metric_alarm.odoo_pod_cpu_high : alarm.arn]
   )
 }

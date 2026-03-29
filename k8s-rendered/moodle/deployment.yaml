@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moodle
+  namespace: moodle-private
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: moodle
+  template:
+    metadata:
+      labels:
+        app: moodle
+    spec:
+      containers:
+        - name: moodle
+          image: "ellakcy/moodle:mysql_maria_apache_latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: MOODLE_DB_TYPE
+              value: mariadb
+            - name: MOODLE_DB_HOST
+              value: "esm-enterprise-prod-moodle.cn82a6ooiios.ap-southeast-1.rds.amazonaws.com"
+            - name: MOODLE_DB_PORT
+              value: "3306"
+            - name: MOODLE_DB_USER
+              value: "moodle_admin"
+            - name: MOODLE_DB_NAME
+              value: "moodledb"
+            - name: MOODLE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: moodle-db
+                  key: password
+            - name: MOODLE_ADMIN
+              value: "admin"
+            - name: MOODLE_ADMIN_PASSWORD
+              value: "Admin~1234"
+            - name: MOODLE_ADMIN_EMAIL
+              value: "admin@esmos.meals.sg"
+            - name: MOODLE_URL
+              value: "http://moodle.internal.esm.local"
+          volumeMounts:
+            - name: moodle-data
+              mountPath: /var/moodledata
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 120
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 360
+            timeoutSeconds: 5
+            periodSeconds: 20
+            failureThreshold: 6
+      volumes:
+        - name: moodle-data
+          emptyDir: {}

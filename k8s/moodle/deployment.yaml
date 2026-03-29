@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: moodle
-          image: "__MOODLE_IMAGE__"
+          image: "ellakcy/moodle:mysql_maria_apache_latest"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
@@ -46,8 +46,6 @@ spec:
             - name: MOODLE_URL
               value: "__MOODLE_URL__"
           volumeMounts:
-            - name: moodle-web
-              mountPath: /var/www/html
             - name: moodle-data
               mountPath: /var/moodledata
           resources:
@@ -60,15 +58,17 @@ spec:
           readinessProbe:
             tcpSocket:
               port: 80
-            initialDelaySeconds: 30
+            initialDelaySeconds: 120
+            timeoutSeconds: 5
             periodSeconds: 10
+            failureThreshold: 12
           livenessProbe:
             tcpSocket:
               port: 80
-            initialDelaySeconds: 90
+            initialDelaySeconds: 360
+            timeoutSeconds: 5
             periodSeconds: 20
+            failureThreshold: 6
       volumes:
-        - name: moodle-web
-          emptyDir: {}
         - name: moodle-data
           emptyDir: {}

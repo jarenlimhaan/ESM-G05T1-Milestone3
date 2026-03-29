@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: odoo-efs-pv
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: efs-static
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: "fs-028051228cc3ca54c::fsap-01670d39bac9cdcc9"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: odoo-pvc
+  namespace: odoo-private
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: efs-static
+  volumeName: odoo-efs-pv

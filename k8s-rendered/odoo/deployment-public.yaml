@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odoo-public
+  namespace: odoo-public
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: odoo-public
+  template:
+    metadata:
+      labels:
+        app: odoo-public
+    spec:
+      containers:
+        - name: odoo
+          image: "233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/odoo17:20260326-114419"
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--database=odoodb"
+            - "--db-filter=^odoodb$"
+          ports:
+            - containerPort: 8069
+          env:
+            - name: HOST
+              value: "esm-enterprise-prod-odoo.cn82a6ooiios.ap-southeast-1.rds.amazonaws.com"
+            - name: PORT
+              value: "5432"
+            - name: USER
+              value: "odoo_admin"
+            - name: PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: odoo-db
+                  key: password
+            - name: PGSSLMODE
+              value: require
+          volumeMounts:
+            - name: odoo-data
+              mountPath: /var/lib/odoo
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /web/login
+              port: 8069
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /web/login
+              port: 8069
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: odoo-data
+          persistentVolumeClaim:
+            claimName: odoo-public-pvc

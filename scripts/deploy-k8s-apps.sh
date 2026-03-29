@@ -37,6 +37,9 @@ Usage:
     [--osticket-admin-password "ChangeThisAdminPassword123!"] \
     [--osticket-cron-interval 5] \
     [--skip-odoo-rollout-wait] \
+    [--include-k8s-secrets-manifest] \
+    [--render-only] \
+    [--render-output-dir k8s-rendered] \
     [--keep-rendered-manifests] \
     [--provision-infra]
 
@@ -61,7 +64,7 @@ Options:
                          Moodle admin password (default: Admin~1234).
   --moodle-admin-email   Moodle admin email (default: admin@esmos.meals.sg).
   --moodle-url           Moodle URL (default: http://moodle.internal.esm.local).
-  --osticket-image       osTicket container image (default: campbellsoftwaresolutions/osticket:latest).
+  --osticket-image       osTicket container image (default: 233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket:custom-20260331-102635).
   --osticket-db-host     osTicket DB host. Defaults to Moodle DB host output.
   --osticket-db-user     osTicket DB user (default: moodle_admin).
   --osticket-db-name     osTicket DB name (default: osticketdb).
@@ -88,6 +91,11 @@ Options:
   --skip-odoo-rollout-wait
                          Skip waiting for odoo-private/odoo-public rollout status.
                          Useful when Odoo DB bootstrap is handled in a later step.
+  --include-k8s-secrets-manifest
+                         Include k8s/secrets.yaml in rendered apply.
+                         Default is to skip it because secrets are Terraform-managed.
+  --render-only          Render manifests only. Do not kubectl apply/restart/wait.
+  --render-output-dir    Directory to write rendered manifests to.
   --keep-rendered-manifests
                          Keep rendered temporary manifests for inspection.
   --provision-infra      Run terraform init + apply before kubectl apply.
@@ -100,6 +108,50 @@ require_cmd() {
     echo "Error: required command '$1' not found." >&2
     exit 1
   fi
+}
+
+resolve_latest_ecr_image() {
+  local account_id="$1"
+  local region="$2"
+  local repo_name="${3:-esm/odoo17}"
+  local latest_tag
+  latest_tag="$(
+    aws ecr describe-images \
+      --region "${region}" \
+      --repository-name "${repo_name}" \
+      --query "reverse(sort_by(imageDetails[?imageTags!=null], &imagePushedAt))[0].imageTags[0]" \
+      --output text 2>/dev/null || true
+  )"
+  if [[ -z "${latest_tag}" || "${latest_tag}" == "None" ]]; then
+    return 1
+  fi
+  printf '%s.dkr.ecr.%s.amazonaws.com/%s:%s' "${account_id}" "${region}" "${repo_name}" "${latest_tag}"
+}
+
+tf_output_raw() {
+  local key="$1"
+  local value
+  local cleaned
+  local err
+  err="$(mktemp)"
+  if ! value="$(terraform -chdir="${TERRAFORM_DIR}" output -raw "${key}" 2>"${err}")"; then
+    cat "${err}" >&2 || true
+    rm -f "${err}"
+    echo "Error: failed reading terraform output '${key}'." >&2
+    exit 1
+  fi
+  if grep -q "No outputs found" "${err}"; then
+    rm -f "${err}"
+    echo "Error: terraform state has no outputs. Run infrastructure apply first." >&2
+    exit 1
+  fi
+  rm -f "${err}"
+  cleaned="$(printf '%s' "${value}" | sed -E 's/\x1b\[[0-9;]*[mK]//g')"
+  if [[ -z "${cleaned}" || "${cleaned}" == *"No outputs found"* || "${cleaned}" == *"Warning:"* ]]; then
+    echo "Error: terraform output '${key}' is not available. Run infrastructure apply first." >&2
+    exit 1
+  fi
+  printf '%s' "${cleaned}"
 }
 
 run_mysql_sql() {
@@ -115,8 +167,13 @@ run_mysql_sql() {
 }
 
 ensure_moodle_db_is_complete() {
-  local version
-  version="$(run_mysql_sql "USE ${MOODLE_DB_NAME}; SELECT value FROM mdl_config WHERE name='version' LIMIT 1;" 2>/dev/null | tr -d '\r' || true)"
+  local version_raw version
+  # Some Moodle images use mdl_config, others may use config.
+  version_raw="$(run_mysql_sql "USE ${MOODLE_DB_NAME}; SELECT value FROM mdl_config WHERE name='version' LIMIT 1;" 2>/dev/null || true)"
+  if [[ -z "${version_raw}" ]]; then
+    version_raw="$(run_mysql_sql "USE ${MOODLE_DB_NAME}; SELECT value FROM config WHERE name='version' LIMIT 1;" 2>/dev/null || true)"
+  fi
+  version="$(printf '%s\n' "${version_raw}" | tr -d '\r' | awk '/^[0-9]+$/ {print; exit}')"
   if [[ -n "${version}" ]]; then
     echo "Moodle DB check OK (version=${version})."
     return 0
@@ -128,13 +185,59 @@ ensure_moodle_db_is_complete() {
   kubectl rollout restart deployment/moodle -n moodle-private
   kubectl rollout status deployment/moodle -n moodle-private --timeout=420s
 
-  version="$(run_mysql_sql "USE ${MOODLE_DB_NAME}; SELECT value FROM mdl_config WHERE name='version' LIMIT 1;" 2>/dev/null | tr -d '\r' || true)"
+  # Give Moodle install bootstrap some time to populate mdl_config.version.
+  for _ in $(seq 1 20); do
+    version_raw="$(run_mysql_sql "USE ${MOODLE_DB_NAME}; SELECT value FROM mdl_config WHERE name='version' LIMIT 1;" 2>/dev/null || true)"
+    if [[ -z "${version_raw}" ]]; then
+      version_raw="$(run_mysql_sql "USE ${MOODLE_DB_NAME}; SELECT value FROM config WHERE name='version' LIMIT 1;" 2>/dev/null || true)"
+    fi
+    version="$(printf '%s\n' "${version_raw}" | tr -d '\r' | awk '/^[0-9]+$/ {print; exit}')"
+    if [[ -n "${version}" ]]; then
+      break
+    fi
+    sleep 10
+  done
+
   if [[ -z "${version}" ]]; then
+    # Fallback: if container logs show Moodle install completed, do not hard-fail.
+    if kubectl logs -n moodle-private deployment/moodle --tail=400 2>/dev/null | grep -q "Installation completed successfully"; then
+      echo "Warning: Moodle version check was inconclusive, but installation logs indicate success. Continuing."
+      return 0
+    fi
     echo "Error: Moodle DB repair did not complete (version still missing)." >&2
     return 1
   fi
 
   echo "Moodle DB repaired successfully (version=${version})."
+}
+
+repair_live_moodle_placeholder_env_if_needed() {
+  if ! kubectl get deployment/moodle -n moodle-private >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local moodle_env_dump
+  moodle_env_dump="$(
+    kubectl get deployment/moodle -n moodle-private \
+      -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}' \
+      2>/dev/null || true
+  )"
+
+  if [[ "${moodle_env_dump}" != *"__MOODLE_"* ]]; then
+    return 0
+  fi
+
+  echo "Detected unresolved __MOODLE_*__ placeholders in live deployment; repairing Moodle env values..."
+  kubectl -n moodle-private set env deployment/moodle \
+    MOODLE_DB_TYPE=mariadb \
+    MOODLE_DB_HOST="${MOODLE_DB_HOST}" \
+    MOODLE_DB_PORT=3306 \
+    MOODLE_DB_USER="${MOODLE_DB_USER}" \
+    MOODLE_DB_NAME="${MOODLE_DB_NAME}" \
+    MOODLE_ADMIN="${MOODLE_ADMIN_USER}" \
+    MOODLE_ADMIN_PASSWORD="${MOODLE_ADMIN_PASSWORD}" \
+    MOODLE_ADMIN_EMAIL="${MOODLE_ADMIN_EMAIL}" \
+    MOODLE_URL="${MOODLE_URL}" >/dev/null
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -169,12 +272,18 @@ MOODLE_ADMIN_EMAIL="admin@esmos.meals.sg"
 MOODLE_URL="http://moodle.internal.esm.local"
 OSTICKET_IMAGE="$(read_dotenv_value OSTICKET_IMAGE)"
 if [[ -z "${OSTICKET_IMAGE}" ]]; then
-  OSTICKET_IMAGE="campbellsoftwaresolutions/osticket:latest"
+  OSTICKET_IMAGE="233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket:custom-20260331-102635"
 fi
-OSTICKET_DB_HOST=""
-OSTICKET_DB_USER="moodle_admin"
+OSTICKET_DB_HOST="$(read_dotenv_value OSTICKET_DB_HOST)"
+OSTICKET_DB_USER="$(read_dotenv_value OSTICKET_DB_USER)"
+if [[ -z "${OSTICKET_DB_USER}" ]]; then
+  OSTICKET_DB_USER="moodle_admin"
+fi
 OSTICKET_DB_PASSWORD=""
-OSTICKET_DB_NAME="osticketdb"
+OSTICKET_DB_NAME="$(read_dotenv_value OSTICKET_DB_NAME)"
+if [[ -z "${OSTICKET_DB_NAME}" ]]; then
+  OSTICKET_DB_NAME="osticketdb"
+fi
 OSTICKET_INSTALL_SECRET="$(read_dotenv_value INSTALL_SECRET)"
 if [[ -z "${OSTICKET_INSTALL_SECRET}" ]]; then
   OSTICKET_INSTALL_SECRET="put-a-long-random-string-here-please-change-me"
@@ -221,6 +330,9 @@ OSTICKET_SECRET_ID="esm/prod/osticket-db-password"
 KEEP_RENDERED_MANIFESTS="false"
 PROVISION_INFRA="false"
 SKIP_ODOO_ROLLOUT_WAIT="false"
+SKIP_K8S_SECRETS_MANIFEST="true"
+RENDER_ONLY="false"
+RENDER_OUTPUT_DIR=""
 RENDER_DIR=""
 
 while [[ $# -gt 0 ]]; do
@@ -357,6 +469,18 @@ while [[ $# -gt 0 ]]; do
       SKIP_ODOO_ROLLOUT_WAIT="true"
       shift
       ;;
+    --include-k8s-secrets-manifest)
+      SKIP_K8S_SECRETS_MANIFEST="false"
+      shift
+      ;;
+    --render-only)
+      RENDER_ONLY="true"
+      shift
+      ;;
+    --render-output-dir)
+      RENDER_OUTPUT_DIR="$2"
+      shift 2
+      ;;
     --provision-infra)
       PROVISION_INFRA="true"
       shift
@@ -375,6 +499,9 @@ done
 
 if [[ "${TERRAFORM_DIR}" != /* ]]; then
   TERRAFORM_DIR="${REPO_ROOT}/${TERRAFORM_DIR}"
+fi
+if [[ -n "${RENDER_OUTPUT_DIR}" && "${RENDER_OUTPUT_DIR}" != /* ]]; then
+  RENDER_OUTPUT_DIR="${REPO_ROOT}/${RENDER_OUTPUT_DIR}"
 fi
 
 cleanup() {
@@ -397,25 +524,28 @@ if [[ "${PROVISION_INFRA}" == "true" ]]; then
 fi
 
 echo "Reading Terraform outputs..."
-CLUSTER_NAME="$(terraform -chdir="${TERRAFORM_DIR}" output -raw eks_cluster_name)"
-CLUSTER_AUTOSCALER_ROLE_ARN="$(terraform -chdir="${TERRAFORM_DIR}" output -raw eks_cluster_autoscaler_role_arn)"
-EKS_NODE_GROUP_ASG_NAME="$(terraform -chdir="${TERRAFORM_DIR}" output -raw eks_node_group_autoscaling_group_name)"
-EKS_NODE_COUNT_MIN="$(terraform -chdir="${TERRAFORM_DIR}" output -raw eks_node_count_min)"
-EKS_NODE_COUNT_MAX="$(terraform -chdir="${TERRAFORM_DIR}" output -raw eks_node_count_max)"
-ODOO_DB_ENDPOINT="$(terraform -chdir="${TERRAFORM_DIR}" output -raw odoo_rds_endpoint)"
-MOODLE_DB_ENDPOINT="$(terraform -chdir="${TERRAFORM_DIR}" output -raw moodle_rds_endpoint)"
-ODOO_DB_NAME="$(terraform -chdir="${TERRAFORM_DIR}" output -raw odoo_db_name)"
-EFS_ID="$(terraform -chdir="${TERRAFORM_DIR}" output -raw efs_id)"
-EFS_ACCESS_POINT_ID="$(terraform -chdir="${TERRAFORM_DIR}" output -raw efs_odoo_access_point_id)"
+CLUSTER_NAME="$(tf_output_raw eks_cluster_name)"
+CLUSTER_AUTOSCALER_ROLE_ARN="$(tf_output_raw eks_cluster_autoscaler_role_arn)"
+EKS_NODE_GROUP_ASG_NAME="$(tf_output_raw eks_node_group_autoscaling_group_name)"
+EKS_NODE_COUNT_MIN="$(tf_output_raw eks_node_count_min)"
+EKS_NODE_COUNT_MAX="$(tf_output_raw eks_node_count_max)"
+ODOO_DB_ENDPOINT="$(tf_output_raw odoo_rds_endpoint)"
+MOODLE_DB_ENDPOINT="$(tf_output_raw moodle_rds_endpoint)"
+ODOO_DB_NAME="$(tf_output_raw odoo_db_name)"
+EFS_ID="$(tf_output_raw efs_id)"
+EFS_ACCESS_POINT_ID="$(tf_output_raw efs_odoo_access_point_id)"
 
 ODOO_DB_HOST="${ODOO_DB_ENDPOINT%%:*}"
 MOODLE_DB_HOST="${MOODLE_DB_ENDPOINT%%:*}"
-if [[ -z "${OSTICKET_DB_HOST}" ]]; then
+if [[ -z "${OSTICKET_DB_HOST}" || "${OSTICKET_DB_HOST}" == "osticket-db" ]]; then
+  if [[ "${OSTICKET_DB_HOST}" == "osticket-db" ]]; then
+    echo "Info: OSTICKET_DB_HOST=osticket-db is a docker-compose host; switching to Moodle RDS host for Kubernetes."
+  fi
   OSTICKET_DB_HOST="${MOODLE_DB_HOST}"
 fi
 
 if [[ -z "${AWS_REGION}" ]]; then
-  AWS_REGION="$(terraform -chdir="${TERRAFORM_DIR}" output -raw aws_region)"
+  AWS_REGION="$(tf_output_raw aws_region)"
 fi
 
 if [[ -n "${ODOO_SECRET_ID}" ]]; then
@@ -444,7 +574,9 @@ if [[ -z "${ODOO_DB_PASSWORD}" || -z "${MOODLE_DB_PASSWORD}" ]]; then
 fi
 
 echo "Updating kubeconfig for cluster ${CLUSTER_NAME} in ${AWS_REGION}..."
-aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
+if [[ "${RENDER_ONLY}" != "true" ]]; then
+  aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
+fi
 
 # If no --odoo-image was passed, reuse the image already running in the cluster.
 # If the cluster has no deployment yet, fall back to the ECR image that
@@ -453,15 +585,27 @@ if [[ -z "${ODOO_IMAGE}" ]]; then
   ODOO_IMAGE="$(kubectl get deployment odoo-private -n odoo-private \
     -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
 fi
-if [[ -z "${ODOO_IMAGE}" ]]; then
+if [[ -z "${ODOO_IMAGE}" || "${ODOO_IMAGE}" == *":latest" ]]; then
   _ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-  ODOO_IMAGE="${_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/esm/odoo17:latest"
+  ODOO_IMAGE="$(resolve_latest_ecr_image "${_ACCOUNT_ID}" "${AWS_REGION}" "esm/odoo17" || true)"
+  if [[ -z "${ODOO_IMAGE}" ]]; then
+    echo "Error: unable to resolve latest tagged Odoo image from ECR repo 'esm/odoo17'." >&2
+    echo "Pass --odoo-image explicitly, or push a tagged image first." >&2
+    exit 1
+  fi
   unset _ACCOUNT_ID
 fi
 echo "Using Odoo image: ${ODOO_IMAGE}"
 
 RENDER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/esm-k8s-XXXXXXXX")"
 cp -R "${K8S_DIR}/." "${RENDER_DIR}/"
+
+if [[ "${SKIP_K8S_SECRETS_MANIFEST}" == "true" ]]; then
+  if [[ -f "${RENDER_DIR}/kustomization.yaml" ]]; then
+    perl -0777 -i -pe 's/^\s*-\s*secrets\.yaml\s*$//mg' "${RENDER_DIR}/kustomization.yaml"
+  fi
+  rm -f "${RENDER_DIR}/secrets.yaml"
+fi
 
 echo "Rendering manifests with current Terraform outputs..."
 export ODOO_DB_HOST ODOO_DB_USER ODOO_DB_PASSWORD
@@ -525,8 +669,24 @@ if grep -R --line-number "__[A-Z0-9_]\+__" "${RENDER_DIR}" >/dev/null; then
   exit 1
 fi
 
+if [[ -n "${RENDER_OUTPUT_DIR}" ]]; then
+  rm -rf "${RENDER_OUTPUT_DIR}"
+  mkdir -p "${RENDER_OUTPUT_DIR}"
+  cp -R "${RENDER_DIR}/." "${RENDER_OUTPUT_DIR}/"
+  echo "Rendered manifests written to: ${RENDER_OUTPUT_DIR}"
+fi
+
+if [[ "${RENDER_ONLY}" == "true" ]]; then
+  if [[ -z "${RENDER_OUTPUT_DIR}" ]]; then
+    echo "Render-only complete. Use --render-output-dir to persist artifacts."
+  fi
+  exit 0
+fi
+
 echo "Applying Kubernetes manifests..."
 kubectl apply -k "${RENDER_DIR}"
+
+repair_live_moodle_placeholder_env_if_needed
 
 echo "Restarting deployments..."
 kubectl rollout restart deployment/odoo-private -n odoo-private

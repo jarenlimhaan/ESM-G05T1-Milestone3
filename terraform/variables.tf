@@ -346,6 +346,12 @@ variable "alert_email" {
   default     = "jarenlim100@gmail.com"
 }
 
+variable "monthly_budget_limit_usd" {
+  description = "Monthly AWS budget amount in USD"
+  type        = number
+  default     = 50
+}
+
 # ==============================================================================
 # Tags
 # ==============================================================================

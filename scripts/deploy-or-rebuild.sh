@@ -10,6 +10,7 @@ Usage:
     [--terraform-dir terraform] \
     [--aws-region ap-southeast-1] \
     [--ecr-repo-name esm/odoo17] \
+    [--allow-destroy] \
     [--target-image "<ecr-image:tag>"] \
     [--skip-image-push] \
     [--odoo-secret-id "..."] \
@@ -20,10 +21,14 @@ Usage:
     [--osticket-db-password "..."]
 
 Behavior:
-  - If Terraform state exists and EKS cluster is ACTIVE, runs:
-      ./scripts/deploy-k8s-apps.sh ...
-  - Otherwise runs:
+  - If Terraform state exists and EKS cluster is ACTIVE, runs bootstrap flow:
+      ./scripts/deploy-odoo-image-to-eks.sh --skip-image-push ...
+  - Otherwise runs rebuild flow:
       ./scripts/rebuild-from-scratch.sh ...
+    By default it uses --skip-destroy for safety.
+    Pass --allow-destroy to permit full teardown before rebuild.
+  - If EKS is in a transitional state (CREATING/UPDATING/DELETING),
+    script exits without destroy/apply to avoid lock/state corruption.
   - If --skip-image-push is set and --target-image is omitted, the script
     resolves the latest tagged image from ECR repo (default: esm/odoo17).
 EOF
@@ -44,6 +49,7 @@ AWS_REGION=""
 TARGET_IMAGE=""
 SKIP_IMAGE_PUSH="false"
 ECR_REPO_NAME="esm/odoo17"
+ALLOW_DESTROY="false"
 
 SHARED_ARGS=()
 DEPLOY_ARGS=()
@@ -65,6 +71,10 @@ while [[ $# -gt 0 ]]; do
     --ecr-repo-name)
       ECR_REPO_NAME="$2"
       shift 2
+      ;;
+    --allow-destroy)
+      ALLOW_DESTROY="true"
+      shift
       ;;
     --target-image)
       TARGET_IMAGE="$2"
@@ -102,8 +112,15 @@ require_cmd terraform
 require_cmd aws
 
 cluster_name=""
+cluster_status=""
+infra_reason="terraform output eks_cluster_name unavailable"
 if terraform -chdir="${TERRAFORM_DIR}" output -raw eks_cluster_name >/dev/null 2>&1; then
   cluster_name="$(terraform -chdir="${TERRAFORM_DIR}" output -raw eks_cluster_name)"
+  if [[ -n "${cluster_name}" ]]; then
+    infra_reason="EKS cluster name found in Terraform output: ${cluster_name}"
+  else
+    infra_reason="terraform output eks_cluster_name is empty"
+  fi
 fi
 
 if [[ -z "${AWS_REGION}" ]]; then
@@ -145,15 +162,46 @@ fi
 infra_up="false"
 if [[ -n "${cluster_name}" && -n "${AWS_REGION}" ]]; then
   cluster_status="$(aws eks describe-cluster --name "${cluster_name}" --region "${AWS_REGION}" --query 'cluster.status' --output text 2>/dev/null || true)"
+  if [[ "${cluster_status}" == "CREATING" || "${cluster_status}" == "UPDATING" || "${cluster_status}" == "DELETING" ]]; then
+    echo "EKS cluster '${cluster_name}' is currently '${cluster_status}'."
+    echo "Aborting to avoid lock contention. Wait until status is ACTIVE (or fully deleted), then rerun."
+    exit 1
+  fi
   if [[ "${cluster_status}" == "ACTIVE" ]]; then
     infra_up="true"
+    infra_reason="EKS cluster '${cluster_name}' is ACTIVE"
+  elif [[ -n "${cluster_status}" ]]; then
+    infra_reason="EKS cluster '${cluster_name}' status is '${cluster_status}'"
+  else
+    infra_reason="EKS cluster '${cluster_name}' not found or not readable in region ${AWS_REGION}"
   fi
+elif [[ -z "${AWS_REGION}" ]]; then
+  infra_reason="${infra_reason}; AWS region is empty"
 fi
 
 if [[ "${infra_up}" == "true" ]]; then
-  echo "Infra is up (EKS cluster ${cluster_name} is ACTIVE). Running deploy-k8s-apps.sh..."
-  "${SCRIPT_DIR}/deploy-k8s-apps.sh" --terraform-dir "${TERRAFORM_DIR}" "${DEPLOY_ARGS[@]}"
+  echo "Infra is up (EKS cluster ${cluster_name} is ACTIVE). Running bootstrap deploy without image push..."
+  BOOTSTRAP_ARGS=(
+    --terraform-dir "${TERRAFORM_DIR}"
+    --skip-image-push
+    "${SHARED_ARGS[@]}"
+  )
+  if [[ -n "${AWS_REGION}" ]]; then
+    BOOTSTRAP_ARGS+=(--aws-region "${AWS_REGION}")
+  fi
+  if [[ -n "${TARGET_IMAGE}" ]]; then
+    BOOTSTRAP_ARGS+=(--target-image "${TARGET_IMAGE}")
+  fi
+  "${SCRIPT_DIR}/deploy-odoo-image-to-eks.sh" "${BOOTSTRAP_ARGS[@]}"
 else
-  echo "Infra is not up. Running rebuild-from-scratch.sh..."
+  echo "Infra is not up. Reason: ${infra_reason}"
+  echo "Running rebuild-from-scratch.sh..."
+  if [[ "${ALLOW_DESTROY}" != "true" ]]; then
+    echo "Safety mode: adding --skip-destroy. Use --allow-destroy to permit teardown."
+    REBUILD_ARGS+=(--skip-destroy)
+  fi
+  if [[ "${SKIP_IMAGE_PUSH}" != "true" ]]; then
+    REBUILD_ARGS+=(--skip-image-push)
+  fi
   "${SCRIPT_DIR}/rebuild-from-scratch.sh" "${REBUILD_ARGS[@]}"
 fi
