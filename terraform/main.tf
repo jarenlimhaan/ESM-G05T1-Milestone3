@@ -458,9 +458,9 @@ data "aws_eks_cluster_auth" "main" {
 }
 
 provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority)
-  token                  = data.aws_eks_cluster_auth.main.token
+  host                   = try(module.eks.cluster_endpoint, "https://localhost")
+  cluster_ca_certificate = try(base64decode(module.eks.cluster_certificate_authority), "")
+  token                  = try(data.aws_eks_cluster_auth.main.token, "")
 }
 
 # Namespaces — Terraform creates them so secrets can be placed immediately.
@@ -468,7 +468,7 @@ provider "kubernetes" {
 
 resource "kubernetes_namespace" "odoo_public" {
   metadata {
-    name = "odoo-public"
+    name   = "odoo-public"
     labels = { "app.kubernetes.io/part-of" = "esm" }
   }
   depends_on = [module.eks]
@@ -476,7 +476,7 @@ resource "kubernetes_namespace" "odoo_public" {
 
 resource "kubernetes_namespace" "odoo_private" {
   metadata {
-    name = "odoo-private"
+    name   = "odoo-private"
     labels = { "app.kubernetes.io/part-of" = "esm" }
   }
   depends_on = [module.eks]
@@ -484,7 +484,7 @@ resource "kubernetes_namespace" "odoo_private" {
 
 resource "kubernetes_namespace" "moodle_private" {
   metadata {
-    name = "moodle-private"
+    name   = "moodle-private"
     labels = { "app.kubernetes.io/part-of" = "esm" }
   }
   depends_on = [module.eks]
@@ -492,7 +492,7 @@ resource "kubernetes_namespace" "moodle_private" {
 
 resource "kubernetes_namespace" "osticket_private" {
   metadata {
-    name = "osticket-private"
+    name   = "osticket-private"
     labels = { "app.kubernetes.io/part-of" = "esm" }
   }
   depends_on = [module.eks]

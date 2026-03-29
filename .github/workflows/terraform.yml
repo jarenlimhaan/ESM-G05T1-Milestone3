@@ -1,0 +1,136 @@
+name: Terraform CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.tf"
+      - "**/*.tfvars"
+  pull_request:
+    paths:
+      - "**/*.tf"
+      - "**/*.tfvars"
+
+env:
+  TF_VERSION: "1.7.5"
+  WORKING_DIR: "./terraform"
+
+jobs:
+  terraform:
+    name: Terraform ${{ github.event_name == 'pull_request' && 'Plan' || 'Apply' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    permissions:
+      contents: read
+      pull-requests: write  # allows the plan comment to be posted on the PR
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout code
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Configure AWS credentials from GitHub Secrets
+      # -----------------------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ap-southeast-1
+
+      # -----------------------------------------------------------------------
+      # 3. Install Terraform (wrapper=true enables stdout/stderr capture)
+      # -----------------------------------------------------------------------
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: true
+
+      # -----------------------------------------------------------------------
+      # 4. Check formatting — fails the PR if any .tf file is not formatted
+      # -----------------------------------------------------------------------
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      # -----------------------------------------------------------------------
+      # 5. Initialise — reads backend from backend.tf (S3 + DynamoDB)
+      # -----------------------------------------------------------------------
+      - name: Terraform Init
+        run: terraform init
+
+      # -----------------------------------------------------------------------
+      # 6. Validate — syntax and config check
+      # -----------------------------------------------------------------------
+      - name: Terraform Validate
+        run: terraform validate
+
+      # -----------------------------------------------------------------------
+      # 7a. PR only — run plan and post the output as a PR comment
+      # -----------------------------------------------------------------------
+      - name: Terraform Plan
+        if: github.event_name == 'pull_request'
+        id: plan
+        run: |
+          set -o pipefail
+          terraform plan -no-color -input=false -lock=false \
+            -var="odoo_db_password=placeholder" \
+            -var="moodle_db_password=placeholder" \
+            -var="osticket_db_password=placeholder" \
+            -var="osticket_install_secret=placeholder" \
+            -var="osticket_admin_password=placeholder" \
+            2>&1 | tee /tmp/tfplan.txt
+        continue-on-error: true   # post comment even if plan fails
+
+      - name: Post Plan as PR Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync('/tmp/tfplan.txt', 'utf8');
+            const MAX = 60000;
+            if (plan.length > MAX) {
+              plan = plan.substring(0, MAX) + '\n... (truncated — plan too large to display fully)';
+            }
+            const outcome = '${{ steps.plan.outcome }}';
+            const body = `#### Terraform Plan 📋 \`${outcome}\`
+            <details><summary>Show Plan</summary>
+
+            \`\`\`terraform
+            ${plan}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Fail if Plan failed
+        if: github.event_name == 'pull_request' && steps.plan.outcome == 'failure'
+        run: exit 1
+
+      # -----------------------------------------------------------------------
+      # 7b. Push to main only — apply the changes
+      # -----------------------------------------------------------------------
+      - name: Terraform Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var="odoo_db_password=${{ secrets.ODOO_DB_PASSWORD }}" \
+            -var="moodle_db_password=${{ secrets.MOODLE_DB_PASSWORD }}" \
+            -var="osticket_db_password=${{ secrets.OSTICKET_DB_PASSWORD }}" \
+            -var="osticket_install_secret=${{ secrets.OSTICKET_INSTALL_SECRET }}" \
+            -var="osticket_admin_password=${{ secrets.OSTICKET_ADMIN_PASSWORD }}"
