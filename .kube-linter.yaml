@@ -1,0 +1,13 @@
+checks:
+  addAllBuiltIn: true
+  exclude:
+    # Our apps (odoo, moodle, osticket) legitimately run as root
+    - "run-as-non-root"
+    # All three apps need writable filesystems for data/cache
+    - "no-read-only-root-fs"
+    # Intentionally 1 replica — cost-controlled student deployment
+    - "minimum-three-replicas"
+    # moodle MOODLE_ADMIN_PASSWORD is a deploy-time placeholder, not a real secret
+    - "env-var-secret"
+    # We do not use the owner label convention
+    - "required-label-owner"
