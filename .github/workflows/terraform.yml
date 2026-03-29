@@ -80,7 +80,7 @@ jobs:
         id: plan
         run: |
           set -o pipefail
-          terraform plan -no-color -input=false \
+          terraform plan -no-color -input=false -lock=false \
             -var="odoo_db_password=placeholder" \
             -var="moodle_db_password=placeholder" \
             -var="osticket_db_password=placeholder" \
