@@ -157,7 +157,7 @@ TERRAFORM_DIR="${REPO_ROOT}/terraform"
 K8S_DIR="${REPO_ROOT}/k8s"
 AWS_REGION=""
 ODOO_DB_USER="odoo_admin"
-ODOO_IMAGE="odoo:16.0"
+ODOO_IMAGE=""
 ODOO_DB_PASSWORD=""
 MOODLE_DB_USER="moodle_admin"
 MOODLE_DB_PASSWORD=""
@@ -445,6 +445,20 @@ fi
 
 echo "Updating kubeconfig for cluster ${CLUSTER_NAME} in ${AWS_REGION}..."
 aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
+
+# If no --odoo-image was passed, reuse the image already running in the cluster.
+# If the cluster has no deployment yet, fall back to the ECR image that
+# deploy-odoo-image-to-eks.sh pushes (SOURCE_IMAGE=odoo17-custom:latest → esm/odoo17).
+if [[ -z "${ODOO_IMAGE}" ]]; then
+  ODOO_IMAGE="$(kubectl get deployment odoo-private -n odoo-private \
+    -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+fi
+if [[ -z "${ODOO_IMAGE}" ]]; then
+  _ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+  ODOO_IMAGE="${_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/esm/odoo17:latest"
+  unset _ACCOUNT_ID
+fi
+echo "Using Odoo image: ${ODOO_IMAGE}"
 
 RENDER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/esm-k8s-XXXXXXXX")"
 cp -R "${K8S_DIR}/." "${RENDER_DIR}/"
