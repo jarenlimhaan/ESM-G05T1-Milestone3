@@ -458,9 +458,9 @@ data "aws_eks_cluster_auth" "main" {
 }
 
 provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority)
-  token                  = data.aws_eks_cluster_auth.main.token
+  host                   = try(module.eks.cluster_endpoint, "https://localhost")
+  cluster_ca_certificate = try(base64decode(module.eks.cluster_certificate_authority), "")
+  token                  = try(data.aws_eks_cluster_auth.main.token, "")
 }
 
 # Namespaces — Terraform creates them so secrets can be placed immediately.
