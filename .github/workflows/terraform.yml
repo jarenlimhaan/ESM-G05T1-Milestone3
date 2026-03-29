@@ -79,12 +79,14 @@ jobs:
         if: github.event_name == 'pull_request'
         id: plan
         run: |
+          set -o pipefail
           terraform plan -no-color -input=false \
             -var="odoo_db_password=placeholder" \
             -var="moodle_db_password=placeholder" \
             -var="osticket_db_password=placeholder" \
             -var="osticket_install_secret=placeholder" \
-            -var="osticket_admin_password=placeholder"
+            -var="osticket_admin_password=placeholder" \
+            2>&1 | tee /tmp/tfplan.txt
         continue-on-error: true   # post comment even if plan fails
 
       - name: Post Plan as PR Comment
@@ -92,24 +94,28 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const stdout = `${{ steps.plan.outputs.stdout }}`;
-            const stderr = `${{ steps.plan.outputs.stderr }}`;
-            const output = `#### Terraform Plan 📋 \`${{ steps.plan.outcome }}\`
+            const fs = require('fs');
+            let plan = fs.readFileSync('/tmp/tfplan.txt', 'utf8');
+            const MAX = 60000;
+            if (plan.length > MAX) {
+              plan = plan.substring(0, MAX) + '\n... (truncated — plan too large to display fully)';
+            }
+            const outcome = '${{ steps.plan.outcome }}';
+            const body = `#### Terraform Plan 📋 \`${outcome}\`
             <details><summary>Show Plan</summary>
 
             \`\`\`terraform
-            ${stdout}
+            ${plan}
             \`\`\`
 
             </details>
 
-            ${stderr ? `<details><summary>Errors</summary>\n\n\`\`\`\n${stderr}\n\`\`\`\n\n</details>` : ''}
             *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: output
+              body: body
             });
 
       - name: Fail if Plan failed
