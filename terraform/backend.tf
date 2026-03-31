@@ -7,7 +7,7 @@
 
 terraform {
   backend "s3" {
-    bucket         = "esm-enterprise-prod-tf-state-jar"
+    bucket         = "esm-enterprise-prod-tf-state"
     key            = "prod/terraform.tfstate"
     region         = "ap-southeast-1"
     dynamodb_table = "esm-enterprise-prod-tf-lock"

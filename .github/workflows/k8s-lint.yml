@@ -5,7 +5,6 @@ on:
   pull_request:
     paths:
       - "k8s/**"
-      - "k8s-rendered/**"
       - ".kube-linter.yaml"
       - ".github/workflows/k8s-lint.yml"
 

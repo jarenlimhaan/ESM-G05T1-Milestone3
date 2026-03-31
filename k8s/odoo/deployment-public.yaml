@@ -4,7 +4,7 @@ metadata:
   name: odoo-public
   namespace: odoo-public
 spec:
-  replicas: 1
+  replicas: 3
   strategy:
     type: Recreate
   selector:

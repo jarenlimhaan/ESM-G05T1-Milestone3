@@ -97,9 +97,6 @@ if [[ -z "${OSTICKET_DB_NAME}" ]]; then
   OSTICKET_DB_NAME="osticketdb"
 fi
 OSTICKET_IMAGE="$(read_dotenv_value OSTICKET_IMAGE)"
-if [[ -z "${OSTICKET_IMAGE}" ]]; then
-  OSTICKET_IMAGE="233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket:custom-20260331-102635"
-fi
 OSTICKET_SECRET_ID=""
 if [[ -n "$(read_dotenv_value ODOO_DB_SECRET_ID)" ]]; then
   ODOO_SECRET_ID="$(read_dotenv_value ODOO_DB_SECRET_ID)"
@@ -399,6 +396,21 @@ aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}" >/de
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+# If no --osticket-image was passed, resolve the latest tag from ECR dynamically.
+if [[ -z "${OSTICKET_IMAGE}" ]]; then
+  OSTICKET_LATEST_TAG="$(resolve_latest_ecr_tag "${AWS_REGION}" "esm/osticket")"
+  if [[ -n "${OSTICKET_LATEST_TAG}" && "${OSTICKET_LATEST_TAG}" != "None" ]]; then
+    OSTICKET_IMAGE="${ECR_REGISTRY}/esm/osticket:${OSTICKET_LATEST_TAG}"
+    echo "Resolved latest osTicket ECR image: ${OSTICKET_IMAGE}"
+  else
+    echo "Error: unable to resolve latest tagged osTicket image from ECR repo 'esm/osticket'." >&2
+    echo "Pass --osticket-image explicitly, or push a tagged image first." >&2
+    exit 1
+  fi
+fi
+echo "Using osTicket image: ${OSTICKET_IMAGE}"
+
 if [[ -z "${TARGET_IMAGE}" && "${SKIP_IMAGE_PUSH}" == "true" ]]; then
   TARGET_IMAGE="$(kubectl get deployment odoo-private -n odoo-private -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
 fi

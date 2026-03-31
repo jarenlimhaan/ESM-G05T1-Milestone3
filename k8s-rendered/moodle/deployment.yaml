@@ -25,7 +25,7 @@ spec:
             - name: MOODLE_DB_TYPE
               value: mariadb
             - name: MOODLE_DB_HOST
-              value: "esm-enterprise-prod-moodle.cn82a6ooiios.ap-southeast-1.rds.amazonaws.com"
+              value: "esm-enterprise-prod-moodle.c9asmcmsm7pz.ap-southeast-1.rds.amazonaws.com"
             - name: MOODLE_DB_PORT
               value: "3306"
             - name: MOODLE_DB_USER

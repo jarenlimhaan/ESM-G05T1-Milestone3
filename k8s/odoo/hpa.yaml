@@ -9,7 +9,7 @@ spec:
     kind: Deployment
     name: odoo-private
   minReplicas: 1
-  maxReplicas: 1
+  maxReplicas: 4
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0
