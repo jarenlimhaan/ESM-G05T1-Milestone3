@@ -111,6 +111,9 @@ metadata:
   namespace: kube-system
   labels:
     app: cluster-autoscaler
+  annotations:
+    ignore-check.kube-linter.io/no-liveness-probe: "Third-party system component — probes not applicable"
+    ignore-check.kube-linter.io/no-readiness-probe: "Third-party system component — probes not applicable"
 spec:
   replicas: 1
   selector:

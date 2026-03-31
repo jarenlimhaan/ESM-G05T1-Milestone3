@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: osticket
+  namespace: osticket-private
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: osticket
+  template:
+    metadata:
+      labels:
+        app: osticket
+    spec:
+      containers:
+        - name: osticket
+          image: "233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket:custom-20260331-102635"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: MYSQL_HOST
+              value: "esm-enterprise-prod-moodle.cn82a6ooiios.ap-southeast-1.rds.amazonaws.com"
+            - name: MYSQL_DATABASE
+              value: "osticketdb"
+            - name: MYSQL_USER
+              value: "moodle_admin"
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: osticket-db
+                  key: password
+            - name: INSTALL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: osticket-db
+                  key: install_secret
+            - name: INSTALL_NAME
+              value: "ESM Support"
+            - name: INSTALL_URL
+              value: "http://osticket.internal.esm.local"
+            - name: INSTALL_EMAIL
+              value: "helpdesk@esmos.meals.sg"
+            - name: ADMIN_FIRSTNAME
+              value: "Admin"
+            - name: ADMIN_LASTNAME
+              value: "User"
+            - name: ADMIN_EMAIL
+              value: "admin@esmos.meals.sg"
+            - name: ADMIN_USERNAME
+              value: "ostadmin"
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: osticket-db
+                  key: admin_password
+            - name: CRON_INTERVAL
+              value: "5"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 90
+            periodSeconds: 20

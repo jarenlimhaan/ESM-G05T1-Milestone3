@@ -4,12 +4,13 @@ services:
     container_name: odoo17-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${ODOO_DB_NAME:-odoo}
-      POSTGRES_USER: ${ODOO_DB_USER:-odoo17}
-      POSTGRES_PASSWORD: ${ODOO_DB_PASSWORD:-odoo17}
+      POSTGRES_DB: odoo
+      POSTGRES_USER: odoo17
+      POSTGRES_PASSWORD: odoo17
     volumes:
       - odoo-db-data:/var/lib/postgresql/data
-      - ./odoo17/odoo.sql.gz:/docker-entrypoint-initdb.d/00-odoo.sql.gz:ro
+      - ./odoo_backup.sql.gz:/docker-entrypoint-initdb.d/00-odoo.sql.gz:ro
+      - ./docker/odoo/reset-password.sh:/docker-entrypoint-initdb.d/01-reset-password.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${ODOO_DB_USER:-odoo17} -d ${ODOO_DB_NAME:-odoo}"]
       interval: 10s
@@ -26,12 +27,12 @@ services:
     ports:
       - "${ODOO_HTTP_PORT:-8069}:8069"
       - "${ODOO_LONGPOLLING_PORT:-8072}:8072"
-    command: ["python3", "/mnt/odoo-src/odoo-bin", "-c", "/etc/odoo/odoo.conf"]
     volumes:
       - ./docker/odoo/odoo.conf:/etc/odoo/odoo.conf:ro
-      - ./odoo17:/mnt/odoo-src:ro
-      - ./external_addons/helpdesk:/mnt/oca-helpdesk:ro
+      - ./external_addons/helpdesk:/mnt/extra-addons:ro
       - ./filestore:/var/lib/odoo/filestore
+      - odoo-data:/var/lib/odoo
 
 volumes:
   odoo-db-data:
+  odoo-data:

@@ -1,0 +1,58 @@
+services:
+  osticket-db:
+    image: mariadb:10.11
+    container_name: osticket-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${OSTICKET_DB_NAME:-osticket}
+      MYSQL_USER: ${OSTICKET_DB_USER:-osticket}
+      MYSQL_PASSWORD: ${OSTICKET_DB_PASSWORD:-osticket}
+      MYSQL_ROOT_PASSWORD: ${OSTICKET_DB_PASSWORD:-osticket}
+    volumes:
+      - osticket-db-data:/var/lib/mysql
+      - ./osticket_backup.sql.gz:/docker-entrypoint-initdb.d/00-osticket.sql.gz:ro
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-p${OSTICKET_DB_PASSWORD:-osticket}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  osticket:
+    build:
+      context: .
+      dockerfile: docker/osticket/Dockerfile
+    image: ${OSTICKET_IMAGE:-campbellsoftware/osticket:1.18.1}
+    container_name: osticket
+    restart: unless-stopped
+    depends_on:
+      osticket-db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: osticket-db
+      MYSQL_DATABASE: ${OSTICKET_DB_NAME:-osticket}
+      MYSQL_USER: ${OSTICKET_DB_USER:-osticket}
+      MYSQL_PASSWORD: ${OSTICKET_DB_PASSWORD:-osticket}
+
+      INSTALL_SECRET: ${INSTALL_SECRET:-default-install-secret}
+      INSTALL_NAME: ${INSTALL_NAME:-Support}
+      INSTALL_URL: ${INSTALL_URL:-http://localhost:8081}
+      INSTALL_EMAIL: ${INSTALL_EMAIL:-admin@example.com}
+
+      ADMIN_FIRSTNAME: ${ADMIN_FIRSTNAME:-Admin}
+      ADMIN_LASTNAME: ${ADMIN_LASTNAME:-User}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin1234}
+
+      CRON_INTERVAL: 5
+    ports:
+      - "8081:80"
+    volumes:
+      - osticket_data:/var/lib/osticket
+      - osticket_plugins:/var/www/html/plugins
+
+volumes:
+  osticket-db-data:
+  osticket_data:
+  osticket_plugins:

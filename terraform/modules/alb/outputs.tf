@@ -13,6 +13,11 @@ output "alb_arn" {
   value       = aws_lb.main.arn
 }
 
+output "alb_arn_suffix" {
+  description = "ARN suffix of the ALB (for CloudWatch metrics dimensions)"
+  value       = aws_lb.main.arn_suffix
+}
+
 output "alb_dns_name" {
   description = "DNS name of the ALB"
   value       = aws_lb.main.dns_name
@@ -28,9 +33,19 @@ output "target_group_arn_odoo" {
   value       = aws_lb_target_group.odoo.arn
 }
 
+output "target_group_arn_suffix_odoo" {
+  description = "ARN suffix of the Odoo target group"
+  value       = aws_lb_target_group.odoo.arn_suffix
+}
+
 output "target_group_arn_moodle" {
   description = "ARN of the Moodle target group"
   value       = aws_lb_target_group.moodle.arn
+}
+
+output "target_group_arn_suffix_moodle" {
+  description = "ARN suffix of the Moodle target group"
+  value       = aws_lb_target_group.moodle.arn_suffix
 }
 
 output "target_group_arn_osticket" {

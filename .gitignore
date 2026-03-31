@@ -1,2 +1,50 @@
+# Project
 .env
+*.env
+.env.local
 external_addons/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform/example.tfvars
+.terraform/
+.terraform.lock.hcl
+terraform.tfplan
+terraform.tfstate.backup
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# VPN / certificates
+*.ovpn
+*.pem
+*.key
+*.crt
+
+# Sensitive directories
+secrets/
+credentials/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE files
+.idea/
+.vscode/
+*.code-workspace
+
+# Temporary files
+tmp/
+temp/
+*.tmp

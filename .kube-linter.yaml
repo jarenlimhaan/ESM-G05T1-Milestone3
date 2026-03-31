@@ -1,0 +1,54 @@
+checks:
+  addAllBuiltIn: true
+  # Run all built-in checks, then exclude false positives for this project.
+  # Checks NOT excluded (i.e. actively enforced):
+  #   unset-cpu-requirements, unset-memory-requirements, no-liveness-probe, no-readiness-probe
+  exclude:
+    # --- Security: intentional for these apps ---
+    # Odoo, Moodle, osTicket legitimately run as root
+    - "run-as-non-root"
+    # All three apps write to disk — read-only root fs would break them
+    - "no-read-only-root-fs"
+
+    # --- Images: placeholder values are substituted at deploy time ---
+    - "latest-tag"
+
+    # --- Replica / scheduling: cost-controlled single-replica deployment ---
+    - "minimum-three-replicas"
+    - "hpa-minimum-three-replicas"
+    # EKS scheduler handles placement; explicit affinity not required
+    - "no-node-affinity"
+    # Gateway replicas=2 on a small cluster — anti-affinity not required
+    - "no-anti-affinity"
+
+    # --- Update strategy: Recreate is intentional for stateful apps ---
+    - "no-rolling-update-strategy"
+
+    # --- Networking: intentional architecture decisions ---
+    # NodePort is intentional for EKS ingress routing
+    - "exposed-services"
+    # NetworkPolicies are out of scope for this project
+    - "non-isolated-pod"
+    # Moodle and osTicket containers run on port 80 by design
+    - "privileged-ports"
+
+    # --- Secrets: secretKeyRef env vars are acceptable here ---
+    # Mounting secrets as files would require app code changes
+    - "read-secret-from-env-var"
+
+    # --- Ownership metadata: not used in this project ---
+    - "required-annotation-email"
+    - "required-label-owner"
+
+    # --- Service accounts: dedicated SAs are out of scope ---
+    - "default-service-account"
+
+    # --- DNS: EKS handles DNS automatically ---
+    - "dnsconfig-options"
+
+    # --- RBAC: cluster-autoscaler requires these permissions to function ---
+    - "access-to-create-pods"
+
+    # --- kube-linter quirk: Deployments have no restartPolicy field;
+    #     linter reads empty string and flags it, but effective policy is Always ---
+    - "restart-policy"

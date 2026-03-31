@@ -1,0 +1,345 @@
+name: Bootstrap Data (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_odoo_db_restore:
+        description: "Restore Odoo DB from data/odoo17/odoo.sql.gz"
+        required: true
+        type: boolean
+        default: true
+      run_odoo_filestore_sync:
+        description: "Sync filestore/odoo into EFS PVC"
+        required: true
+        type: boolean
+        default: true
+      run_osticket_db_restore:
+        description: "Restore osTicket DB from data/osticket/osticket.sql.gz"
+        required: true
+        type: boolean
+        default: true
+
+env:
+  TF_VERSION: "1.7.5"
+  WORKING_DIR: "./terraform"
+  AWS_REGION: ${{ vars.AWS_REGION != '' && vars.AWS_REGION || 'ap-southeast-1' }}
+  ODOO_UPGRADE_MODULES: "helpdesk_mgmt,helpdesk_mgmt_merge,helpdesk_mgmt_project,helpdesk_mgmt_sale,helpdesk_ticket_related,helpdesk_type"
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select AWS auth mode
+        id: aws_auth
+        shell: bash
+        env:
+          AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -n "${AWS_ROLE_TO_ASSUME}" ]; then
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+          elif [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then
+            echo "mode=keys" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No AWS auth configured. Set AWS_ROLE_TO_ASSUME or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY secrets."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ steps.aws_auth.outputs.mode == 'oidc' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (Access Keys Fallback)
+        if: ${{ steps.aws_auth.outputs.mode == 'keys' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Terraform Init (for outputs)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Update kubeconfig from Terraform output
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          CLUSTER_NAME="$(terraform output -raw eks_cluster_name)"
+          REGION="$(terraform output -raw aws_region)"
+          aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}"
+
+      - name: Ensure GitHub role has EKS access entry
+        if: ${{ steps.aws_auth.outputs.mode == 'oidc' }}
+        working-directory: ${{ env.WORKING_DIR }}
+        env:
+          GITHUB_ROLE_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        run: |
+          CLUSTER_NAME="$(terraform output -raw eks_cluster_name)"
+          REGION="$(terraform output -raw aws_region)"
+          POLICY_ARN="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+          if ! aws eks describe-access-entry --region "${REGION}" --cluster-name "${CLUSTER_NAME}" --principal-arn "${GITHUB_ROLE_ARN}" >/dev/null 2>&1; then
+            aws eks create-access-entry \
+              --region "${REGION}" \
+              --cluster-name "${CLUSTER_NAME}" \
+              --principal-arn "${GITHUB_ROLE_ARN}" \
+              --type STANDARD
+          fi
+
+          aws eks associate-access-policy \
+            --region "${REGION}" \
+            --cluster-name "${CLUSTER_NAME}" \
+            --principal-arn "${GITHUB_ROLE_ARN}" \
+            --policy-arn "${POLICY_ARN}" \
+            --access-scope type=cluster >/dev/null 2>&1 || true
+
+          sleep 15
+
+      - name: Odoo DB Restore
+        if: ${{ inputs.run_odoo_db_restore }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f data/odoo17/odoo.sql.gz
+          ODOO_DB_HOST="$(terraform -chdir=terraform output -raw odoo_rds_endpoint | cut -d: -f1)"
+          ODOO_DB_NAME="$(terraform -chdir=terraform output -raw odoo_db_name)"
+          ODOO_DB_USER="odoo_admin"
+          ODOO_DB_PASSWORD="$(kubectl get secret odoo-db -n odoo-private -o jsonpath='{.data.password}' | base64 -d)"
+
+          kubectl scale deployment/odoo-private -n odoo-private --replicas=0 || true
+          kubectl scale deployment/odoo-public -n odoo-public --replicas=0 || true
+
+          POD="odoo-db-restore-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: ${POD}
+            namespace: odoo-private
+          spec:
+            restartPolicy: Never
+            containers:
+              - name: postgres
+                image: postgres:15
+                command: ["sh", "-c", "sleep 3600"]
+                env:
+                  - name: PGPASSWORD
+                    value: "${ODOO_DB_PASSWORD}"
+          EOF
+
+          kubectl wait --for=condition=Ready "pod/${POD}" -n odoo-private --timeout=180s
+          kubectl cp data/odoo17/odoo.sql.gz "odoo-private/${POD}:/tmp/odoo.sql.gz"
+          kubectl exec -n odoo-private "${POD}" -- sh -lc "
+            psql -h '${ODOO_DB_HOST}' -U '${ODOO_DB_USER}' -d postgres -tAc \"SELECT 1 FROM pg_roles WHERE rolname='odoo17'\" | grep -q 1 || psql -h '${ODOO_DB_HOST}' -U '${ODOO_DB_USER}' -d postgres -c \"CREATE ROLE odoo17\";
+            psql -h '${ODOO_DB_HOST}' -U '${ODOO_DB_USER}' -d postgres -c \"DROP DATABASE IF EXISTS \\\"${ODOO_DB_NAME}\\\"\";
+            psql -h '${ODOO_DB_HOST}' -U '${ODOO_DB_USER}' -d postgres -c \"CREATE DATABASE \\\"${ODOO_DB_NAME}\\\" OWNER odoo17\";
+            gunzip -c /tmp/odoo.sql.gz | psql -h '${ODOO_DB_HOST}' -U '${ODOO_DB_USER}' -d '${ODOO_DB_NAME}'
+          "
+          kubectl delete pod "${POD}" -n odoo-private --ignore-not-found=true
+
+      - name: Odoo Filestore Sync
+        if: ${{ inputs.run_odoo_filestore_sync }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d filestore/odoo
+          POD="odoo-filestore-sync-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: ${POD}
+            namespace: odoo-private
+          spec:
+            restartPolicy: Never
+            containers:
+              - name: sync
+                image: alpine:3.20
+                command: ["sh", "-c", "sleep 3600"]
+                volumeMounts:
+                  - name: odoo-data
+                    mountPath: /mnt/odoo
+            volumes:
+              - name: odoo-data
+                persistentVolumeClaim:
+                  claimName: odoo-pvc
+          EOF
+          kubectl wait --for=condition=Ready "pod/${POD}" -n odoo-private --timeout=180s
+          kubectl cp filestore/odoo/. "odoo-private/${POD}:/tmp/filestore"
+          kubectl exec -n odoo-private "${POD}" -- sh -lc "mkdir -p /mnt/odoo/.local/share/Odoo/filestore && cp -a /tmp/filestore/. /mnt/odoo/.local/share/Odoo/filestore/"
+          kubectl delete pod "${POD}" -n odoo-private --ignore-not-found=true
+
+      - name: Scale Odoo Back Up
+        id: odoo_scale_back
+        if: ${{ inputs.run_odoo_db_restore || inputs.run_odoo_filestore_sync }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl scale deployment/odoo-private -n odoo-private --replicas=1 || true
+          kubectl scale deployment/odoo-public -n odoo-public --replicas=1 || true
+
+      - name: Run Odoo module upgrade after restore
+        if: ${{ inputs.run_odoo_db_restore || inputs.run_odoo_filestore_sync }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ODOO_DB_NAME="$(terraform -chdir=terraform output -raw odoo_db_name)"
+          ODOO_DB_HOST="$(terraform -chdir=terraform output -raw odoo_rds_endpoint | cut -d: -f1)"
+          ODOO_DB_PORT="5432"
+          ODOO_DB_USER="odoo_admin"
+          ODOO_DB_PASSWORD="$(kubectl get secret odoo-db -n odoo-private -o jsonpath='{.data.password}' | base64 -d)"
+
+          POD=""
+          for _ in $(seq 1 60); do
+            POD="$(kubectl get pods -n odoo-private -l app=odoo-private -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+            if [ -n "${POD}" ]; then
+              PHASE="$(kubectl get pod -n odoo-private "${POD}" -o jsonpath='{.status.phase}')"
+              if [ "${PHASE}" = "Running" ]; then
+                break
+              fi
+            fi
+            sleep 5
+          done
+
+          if [ -z "${POD}" ]; then
+            echo "::error::No odoo-private pod found to run module upgrade."
+            exit 1
+          fi
+
+          ODOO_IMAGE="$(kubectl get deployment odoo-private -n odoo-private -o jsonpath='{.spec.template.spec.containers[0].image}')"
+          UPGRADE_POD="odoo-module-upgrade-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: ${UPGRADE_POD}
+            namespace: odoo-private
+          spec:
+            restartPolicy: Never
+            containers:
+              - name: upgrade
+                image: ${ODOO_IMAGE}
+                command:
+                  - sh
+                  - -lc
+                  - >
+                    odoo --database='${ODOO_DB_NAME}'
+                    --db_host='${ODOO_DB_HOST}'
+                    --db_port='${ODOO_DB_PORT}'
+                    --db_user='${ODOO_DB_USER}'
+                    --db_password="\$PASSWORD"
+                    -u '${ODOO_UPGRADE_MODULES}'
+                    --stop-after-init
+                    --no-http
+                env:
+                  - name: PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: odoo-db
+                        key: password
+          EOF
+
+          kubectl wait --for=condition=Ready "pod/${UPGRADE_POD}" -n odoo-private --timeout=180s
+          kubectl wait --for=condition=ContainersReady "pod/${UPGRADE_POD}" -n odoo-private --timeout=180s || true
+          kubectl logs -n odoo-private "${UPGRADE_POD}" --tail=200
+          kubectl wait --for=condition=Ready "pod/${UPGRADE_POD}" -n odoo-private --timeout=10s >/dev/null 2>&1 || true
+          kubectl wait --for=jsonpath='{.status.phase}'=Succeeded "pod/${UPGRADE_POD}" -n odoo-private --timeout=1800s
+          kubectl delete pod "${UPGRADE_POD}" -n odoo-private --ignore-not-found=true
+
+      - name: Restart Odoo deployments after module upgrade
+        id: odoo_rollout
+        if: ${{ inputs.run_odoo_db_restore || inputs.run_odoo_filestore_sync }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl rollout restart deployment/odoo-private -n odoo-private
+          kubectl rollout restart deployment/odoo-public -n odoo-public
+          kubectl rollout status deployment/odoo-private -n odoo-private --timeout=900s
+          kubectl rollout status deployment/odoo-public -n odoo-public --timeout=900s
+
+      - name: Diagnose Odoo rollout if not ready
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set +e
+          echo "=== odoo-private pods ==="
+          kubectl get pods -n odoo-private -o wide
+          echo "=== odoo-public pods ==="
+          kubectl get pods -n odoo-public -o wide
+          echo "=== odoo-private deployment describe ==="
+          kubectl describe deployment odoo-private -n odoo-private
+          echo "=== odoo-public deployment describe ==="
+          kubectl describe deployment odoo-public -n odoo-public
+          echo "=== recent odoo-private logs ==="
+          kubectl logs -n odoo-private deploy/odoo-private --tail=200
+          echo "=== recent odoo-public logs ==="
+          kubectl logs -n odoo-public deploy/odoo-public --tail=200
+
+      - name: osTicket DB Restore
+        if: ${{ always() && inputs.run_osticket_db_restore }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f data/osticket/osticket.sql.gz
+          MYSQL_HOST="$(kubectl get deployment osticket -n osticket-private -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="MYSQL_HOST")].value}')"
+          MYSQL_DB="$(kubectl get deployment osticket -n osticket-private -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="MYSQL_DATABASE")].value}')"
+          MYSQL_USER="$(kubectl get deployment osticket -n osticket-private -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="MYSQL_USER")].value}')"
+          MYSQL_PASSWORD="$(kubectl get secret osticket-db -n osticket-private -o jsonpath='{.data.password}' | base64 -d)"
+
+          kubectl scale deployment/osticket -n osticket-private --replicas=0 || true
+
+          POD="osticket-db-restore-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: ${POD}
+            namespace: osticket-private
+          spec:
+            restartPolicy: Never
+            containers:
+              - name: mysql
+                image: mysql:8.0
+                command: ["sh", "-c", "sleep 3600"]
+                env:
+                  - name: MYSQL_PWD
+                    value: "${MYSQL_PASSWORD}"
+          EOF
+          kubectl wait --for=condition=Ready "pod/${POD}" -n osticket-private --timeout=180s
+          kubectl cp data/osticket/osticket.sql.gz "osticket-private/${POD}:/tmp/osticket.sql.gz"
+          kubectl exec -n osticket-private "${POD}" -- sh -lc "
+            mysql -h '${MYSQL_HOST}' -u '${MYSQL_USER}' -D mysql -e \"DROP DATABASE IF EXISTS \\\`${MYSQL_DB}\\\`; CREATE DATABASE \\\`${MYSQL_DB}\\\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON \\\`${MYSQL_DB}\\\`.* TO '${MYSQL_USER}'@'%'; FLUSH PRIVILEGES;\";
+            gunzip -c /tmp/osticket.sql.gz | mysql -h '${MYSQL_HOST}' -u '${MYSQL_USER}' '${MYSQL_DB}'
+          "
+          kubectl delete pod "${POD}" -n osticket-private --ignore-not-found=true
+          kubectl scale deployment/osticket -n osticket-private --replicas=1 || true
+          kubectl rollout status deployment/osticket -n osticket-private --timeout=300s
+
+      - name: Fail if Odoo did not recover after scale back
+        if: ${{ steps.odoo_rollout.outcome == 'failure' }}
+        run: |
+          echo "Odoo deployments did not become ready after bootstrap. See diagnostics above."
+          exit 1

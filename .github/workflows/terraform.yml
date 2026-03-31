@@ -1,0 +1,133 @@
+name: ArgoCD Deploy (No Terraform Apply)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "k8s-rendered/**"
+      - "argocd/**"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+env:
+  TF_VERSION: "1.7.5"
+  WORKING_DIR: "./terraform"
+  AWS_REGION: ${{ vars.AWS_REGION != '' && vars.AWS_REGION || 'ap-southeast-1' }}
+
+jobs:
+  argocd_apply:
+    name: Apply ArgoCD Application
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure rendered manifests exist
+        run: |
+          if [ ! -d "k8s-rendered" ]; then
+            echo "k8s-rendered directory is missing. Commit rendered manifests before ArgoCD deploy."
+            exit 1
+          fi
+
+      - name: Select AWS auth mode
+        id: aws_auth
+        shell: bash
+        env:
+          AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -n "${AWS_ROLE_TO_ASSUME}" ]; then
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+          elif [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then
+            echo "mode=keys" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No AWS auth configured. Set AWS_ROLE_TO_ASSUME or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY secrets."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ steps.aws_auth.outputs.mode == 'oidc' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (Access Keys Fallback)
+        if: ${{ steps.aws_auth.outputs.mode == 'keys' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform (read outputs only)
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Terraform Init (for outputs)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Update kubeconfig from Terraform output
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          CLUSTER_NAME="$(terraform output -raw eks_cluster_name)"
+          REGION="$(terraform output -raw aws_region)"
+          aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}"
+
+      - name: Ensure GitHub role has EKS access entry
+        if: ${{ steps.aws_auth.outputs.mode == 'oidc' }}
+        working-directory: ${{ env.WORKING_DIR }}
+        env:
+          GITHUB_ROLE_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        run: |
+          CLUSTER_NAME="$(terraform output -raw eks_cluster_name)"
+          REGION="$(terraform output -raw aws_region)"
+          POLICY_ARN="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+          if ! aws eks describe-access-entry --region "${REGION}" --cluster-name "${CLUSTER_NAME}" --principal-arn "${GITHUB_ROLE_ARN}" >/dev/null 2>&1; then
+            aws eks create-access-entry \
+              --region "${REGION}" \
+              --cluster-name "${CLUSTER_NAME}" \
+              --principal-arn "${GITHUB_ROLE_ARN}" \
+              --type STANDARD
+          fi
+
+          aws eks associate-access-policy \
+            --region "${REGION}" \
+            --cluster-name "${CLUSTER_NAME}" \
+            --principal-arn "${GITHUB_ROLE_ARN}" \
+            --policy-arn "${POLICY_ARN}" \
+            --access-scope type=cluster >/dev/null 2>&1 || true
+
+          # Give EKS auth a short moment to propagate.
+          sleep 15
+
+      - name: Verify Kubernetes API access
+        run: |
+          kubectl get ns >/dev/null
+
+      - name: Install/Upgrade ArgoCD (idempotent)
+        run: |
+          kubectl get namespace argocd >/dev/null 2>&1 || kubectl create namespace argocd
+          if kubectl get deployment argocd-server -n argocd >/dev/null 2>&1; then
+            echo "ArgoCD is already installed; skipping install manifest."
+          else
+            kubectl apply --validate=false -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          fi
+
+      - name: Apply ArgoCD Application
+        run: kubectl apply --validate=false -f argocd/application.yaml
+
+      - name: Verify ArgoCD Application exists
+        run: kubectl get applications.argoproj.io -n argocd

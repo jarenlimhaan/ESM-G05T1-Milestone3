@@ -1,0 +1,24 @@
+name: k8s Lint
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "k8s/**"
+      - "k8s-rendered/**"
+      - ".kube-linter.yaml"
+      - ".github/workflows/k8s-lint.yml"
+
+jobs:
+  kube-linter:
+    name: kube-linter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run kube-linter
+        uses: stackrox/kube-linter-action@v1
+        with:
+          directory: k8s
+          config: .kube-linter.yaml

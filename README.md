@@ -155,7 +155,7 @@ K8s-only cleanup:
 
 - Use `scripts/deploy-k8s-apps.sh` (not raw `kubectl apply -k k8s`) because manifests contain placeholders and must be rendered first.
 - osTicket K8s rendering now follows the same env contract as `docker-compose-osTicket.yaml` (image, install/admin settings, DB settings).
-- `scripts/deploy-k8s-apps.sh` reads `.env` defaults for osTicket keys (`OSTICKET_IMAGE`, `INSTALL_*`, `ADMIN_*`, `CRON_INTERVAL`) unless overridden via CLI flags.
+- `scripts/deploy-k8s-apps.sh` reads `.env` defaults for osTicket keys (`INSTALL_*`, `ADMIN_*`, `CRON_INTERVAL`) unless overridden via CLI flags.
 - `scripts/rebuild-from-scratch.sh` calls `destroy-everything.sh` then `deploy-odoo-image-to-eks.sh --provision-infra`.
 - If `OSTICKET_DB_USER` is `moodle_admin`, deploy scripts hard-enforce osTicket to use the Moodle DB password to prevent secret drift.
 - If you destroy/recreate often, endpoints and VPN configuration can change. Re-generate VPN profile after each fresh create.
