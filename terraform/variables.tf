@@ -31,9 +31,14 @@ variable "owner" {
 # ==============================================================================
 
 variable "aws_region" {
-  description = "AWS region for deployment (Asia Pacific for data residency)"
+  description = "AWS region for deployment (Asia Pacific Singapore — data residency requirement)"
   type        = string
   default     = "ap-southeast-1"
+
+  validation {
+    condition     = var.aws_region == "ap-southeast-1"
+    error_message = "Data residency policy mandates ap-southeast-1 (Singapore). Override is not permitted."
+  }
 }
 
 # ==============================================================================
