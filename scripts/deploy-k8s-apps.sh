@@ -64,7 +64,7 @@ Options:
                          Moodle admin password (default: Admin~1234).
   --moodle-admin-email   Moodle admin email (default: admin@esmos.meals.sg).
   --moodle-url           Moodle URL (default: http://moodle.internal.esm.local).
-  --osticket-image       osTicket container image (default: 233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket:custom-20260331-102635).
+  --osticket-image       osTicket container image (default: latest image from ECR repo esm/osticket, resolved at runtime).
   --osticket-db-host     osTicket DB host. Defaults to Moodle DB host output.
   --osticket-db-user     osTicket DB user (default: moodle_admin).
   --osticket-db-name     osTicket DB name (default: osticketdb).
@@ -271,9 +271,6 @@ MOODLE_ADMIN_PASSWORD="Admin~1234"
 MOODLE_ADMIN_EMAIL="admin@esmos.meals.sg"
 MOODLE_URL="http://moodle.internal.esm.local"
 OSTICKET_IMAGE="$(read_dotenv_value OSTICKET_IMAGE)"
-if [[ -z "${OSTICKET_IMAGE}" ]]; then
-  OSTICKET_IMAGE="233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket:custom-20260331-102635"
-fi
 OSTICKET_DB_HOST="$(read_dotenv_value OSTICKET_DB_HOST)"
 OSTICKET_DB_USER="$(read_dotenv_value OSTICKET_DB_USER)"
 if [[ -z "${OSTICKET_DB_USER}" ]]; then
@@ -596,6 +593,22 @@ if [[ -z "${ODOO_IMAGE}" || "${ODOO_IMAGE}" == *":latest" ]]; then
   unset _ACCOUNT_ID
 fi
 echo "Using Odoo image: ${ODOO_IMAGE}"
+
+# If no --osticket-image was passed, reuse the running image or resolve from ECR.
+if [[ -z "${OSTICKET_IMAGE}" && "${RENDER_ONLY}" != "true" ]]; then
+  OSTICKET_IMAGE="$(kubectl get deployment osticket -n osticket-private \
+    -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+fi
+if [[ -z "${OSTICKET_IMAGE}" || "${OSTICKET_IMAGE}" == *":latest" ]]; then
+  _ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+  OSTICKET_IMAGE="$(resolve_latest_ecr_image "${_ACCOUNT_ID}" "${AWS_REGION}" "esm/osticket" || true)"
+  unset _ACCOUNT_ID
+fi
+if [[ -z "${OSTICKET_IMAGE}" ]]; then
+  echo "Error: unable to resolve osTicket image. Pass --osticket-image explicitly or push a tagged image to esm/osticket in ECR." >&2
+  exit 1
+fi
+echo "Using osTicket image: ${OSTICKET_IMAGE}"
 
 RENDER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/esm-k8s-XXXXXXXX")"
 cp -R "${K8S_DIR}/." "${RENDER_DIR}/"
