@@ -617,8 +617,8 @@ if [[ -z "${OSTICKET_IMAGE}" || "${OSTICKET_IMAGE}" == *":latest" ]]; then
   unset _ACCOUNT_ID
 fi
 if [[ -z "${OSTICKET_IMAGE}" ]]; then
-  echo "Warning: no ECR image found for esm/osticket; falling back to public image campbellsoftwaresolutions/osticket:latest." >&2
-  OSTICKET_IMAGE="campbellsoftwaresolutions/osticket:latest"
+  echo "Warning: no ECR image found for esm/osticket; falling back to public image devinsolutions/osticket:1.17.5." >&2
+  OSTICKET_IMAGE="devinsolutions/osticket:1.17.5"
 fi
 echo "Using osTicket image: ${OSTICKET_IMAGE}"
 
