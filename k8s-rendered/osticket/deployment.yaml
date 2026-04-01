@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: osticket
-          image: "campbellsoftware/osticket:1.18.1"
+          image: "campbellsoftwaresolutions/osticket:latest"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
