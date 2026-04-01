@@ -97,7 +97,9 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const plan = fs.readFileSync('/tmp/tfplan.txt', 'utf8').slice(0, 60000);
+            const plan = fs.existsSync('/tmp/tfplan.txt')
+              ? fs.readFileSync('/tmp/tfplan.txt', 'utf8').slice(0, 60000)
+              : '(plan output unavailable — the plan step failed before producing output)';
             const status = '${{ steps.plan.outcome }}' === 'success' ? '✅' : '❌';
             github.rest.issues.createComment({
               issue_number: context.issue.number,
