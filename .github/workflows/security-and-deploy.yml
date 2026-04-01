@@ -115,3 +115,13 @@ jobs:
         run: |
           REGION="${AWS_REGION:-ap-southeast-1}"
           ./scripts/deploy-or-rebuild.sh --skip-image-push --aws-region "${REGION}"
+
+      - name: Sync K8s secrets from AWS Secrets Manager
+        shell: bash
+        run: |
+          REGION="${AWS_REGION:-ap-southeast-1}"
+          ./scripts/sync-k8s-secrets-from-aws.sh \
+            --region "${REGION}" \
+            --odoo-secret-id "esm/prod/odoo-db-password" \
+            --moodle-secret-id "esm/prod/moodle-db-password" \
+            --osticket-secret-id "esm/prod/osticket-db-password"
