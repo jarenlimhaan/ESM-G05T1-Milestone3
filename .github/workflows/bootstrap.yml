@@ -163,6 +163,7 @@ jobs:
         run: |
           set -euo pipefail
           test -d filestore/odoo
+          ODOO_DB_NAME="$(terraform -chdir=terraform output -raw odoo_db_name)"
           POD="odoo-filestore-sync-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cat <<EOF | kubectl apply -f -
           apiVersion: v1
@@ -178,7 +179,7 @@ jobs:
                 command: ["sh", "-c", "sleep 3600"]
                 volumeMounts:
                   - name: odoo-data
-                    mountPath: /mnt/odoo
+                    mountPath: /mnt/odoo-data
             volumes:
               - name: odoo-data
                 persistentVolumeClaim:
@@ -186,7 +187,7 @@ jobs:
           EOF
           kubectl wait --for=condition=Ready "pod/${POD}" -n odoo-private --timeout=180s
           kubectl cp filestore/odoo/. "odoo-private/${POD}:/tmp/filestore"
-          kubectl exec -n odoo-private "${POD}" -- sh -lc "mkdir -p /mnt/odoo/.local/share/Odoo/filestore && cp -a /tmp/filestore/. /mnt/odoo/.local/share/Odoo/filestore/"
+          kubectl exec -n odoo-private "${POD}" -- sh -lc "mkdir -p /mnt/odoo-data/filestore/${ODOO_DB_NAME} && cp -a /tmp/filestore/. /mnt/odoo-data/filestore/${ODOO_DB_NAME}/ && chown -R 101:101 /mnt/odoo-data/filestore/${ODOO_DB_NAME} || true"
           kubectl delete pod "${POD}" -n odoo-private --ignore-not-found=true
 
       - name: Scale Odoo Back Up

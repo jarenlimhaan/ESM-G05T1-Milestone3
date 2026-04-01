@@ -40,7 +40,10 @@ spec:
             - name: MOODLE_ADMIN
               value: "admin"
             - name: MOODLE_ADMIN_PASSWORD
-              value: "Admin~1234"
+              valueFrom:
+                secretKeyRef:
+                  name: moodle-db
+                  key: admin_password
             - name: MOODLE_ADMIN_EMAIL
               value: "admin@esmos.meals.sg"
             - name: MOODLE_URL

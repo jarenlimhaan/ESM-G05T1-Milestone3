@@ -55,7 +55,8 @@ Options:
   --terraform-dir        Terraform directory (default: terraform).
   --aws-region           AWS region. If omitted, read from Terraform output.
   --odoo-db-user         Odoo DB user (default: odoo_admin).
-  --odoo-image           Odoo container image (default: odoo:16.0).
+  --odoo-image           Odoo container image (default: resolved from running cluster deployment or
+                         ECR repo esm/odoo17; falls back to error if neither is available).
   --moodle-db-user       Moodle DB user (default: moodle_admin).
   --moodle-db-name       Moodle DB name (default: moodledb).
   --moodle-image         Moodle container image (default: ellakcy/moodle:mysql_maria_apache_latest).
@@ -266,10 +267,22 @@ MOODLE_DB_USER="moodle_admin"
 MOODLE_DB_PASSWORD=""
 MOODLE_DB_NAME="moodledb"
 MOODLE_IMAGE="ellakcy/moodle:mysql_maria_apache_latest"
-MOODLE_ADMIN_USER="admin"
-MOODLE_ADMIN_PASSWORD="Admin~1234"
-MOODLE_ADMIN_EMAIL="admin@esmos.meals.sg"
-MOODLE_URL="http://moodle.internal.esm.local"
+MOODLE_ADMIN_USER="$(read_dotenv_value MOODLE_ADMIN_USER)"
+if [[ -z "${MOODLE_ADMIN_USER}" ]]; then
+  MOODLE_ADMIN_USER="admin"
+fi
+MOODLE_ADMIN_PASSWORD="$(read_dotenv_value MOODLE_ADMIN_PASSWORD)"
+if [[ -z "${MOODLE_ADMIN_PASSWORD}" ]]; then
+  MOODLE_ADMIN_PASSWORD="Admin~1234"
+fi
+MOODLE_ADMIN_EMAIL="$(read_dotenv_value MOODLE_ADMIN_EMAIL)"
+if [[ -z "${MOODLE_ADMIN_EMAIL}" ]]; then
+  MOODLE_ADMIN_EMAIL="admin@esmos.meals.sg"
+fi
+MOODLE_URL="$(read_dotenv_value MOODLE_URL)"
+if [[ -z "${MOODLE_URL}" ]]; then
+  MOODLE_URL="http://moodle.internal.esm.local"
+fi
 OSTICKET_IMAGE="$(read_dotenv_value OSTICKET_IMAGE)"
 OSTICKET_DB_HOST="$(read_dotenv_value OSTICKET_DB_HOST)"
 OSTICKET_DB_USER="$(read_dotenv_value OSTICKET_DB_USER)"

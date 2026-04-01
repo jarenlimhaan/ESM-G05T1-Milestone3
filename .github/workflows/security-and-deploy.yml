@@ -124,4 +124,7 @@ jobs:
             --region "${REGION}" \
             --odoo-secret-id "esm/prod/odoo-db-password" \
             --moodle-secret-id "esm/prod/moodle-db-password" \
-            --osticket-secret-id "esm/prod/osticket-db-password"
+            --osticket-secret-id "esm/prod/osticket-db-password" \
+            --moodle-admin-password "${{ secrets.MOODLE_ADMIN_PASSWORD }}" \
+            --osticket-install-secret "${{ secrets.OSTICKET_INSTALL_SECRET }}" \
+            --osticket-admin-password "${{ secrets.OSTICKET_ADMIN_PASSWORD }}"
