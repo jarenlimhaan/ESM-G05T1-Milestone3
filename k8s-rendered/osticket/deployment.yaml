@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: osticket
-          image: "990521646880.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket:custom-20260331-225412"
+          image: "campbellsoftware/osticket:1.18.1"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80

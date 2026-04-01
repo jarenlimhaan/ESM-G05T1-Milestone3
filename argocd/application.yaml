@@ -8,12 +8,18 @@ spec:
 
   source:
     repoURL: https://github.com/jarenlimhaan/ESM-G05T1-Milestone3
-    targetRevision: main      # track the main branch
+    targetRevision: fix/secrets   # TODO: revert to main after PR #3 is merged
     path: k8s-rendered        # rendered folder with no placeholders
 
   destination:
     server: https://kubernetes.default.svc   # "this cluster" (in-cluster)
     namespace: default        # ArgoCD will honour per-resource namespaces from the manifests
+
+  ignoreDifferences:
+    - group: ""
+      kind: PersistentVolume
+      jsonPointers:
+        - /spec/claimRef          # Kubernetes auto-populates this when PV is bound
 
   syncPolicy:
     automated:
