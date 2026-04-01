@@ -4,7 +4,7 @@ metadata:
   name: moodle
   namespace: moodle-private
 spec:
-  replicas: 3
+  replicas: 1
   strategy:
     type: Recreate
   selector:
