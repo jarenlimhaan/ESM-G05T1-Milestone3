@@ -150,6 +150,8 @@ kubectl create secret generic osticket-db -n osticket-private \
   --from-literal=password="${OSTICKET_DB_PASSWORD}" \
   --from-literal=install_secret="${OSTICKET_INSTALL_SECRET}" \
   --from-literal=admin_password="${OSTICKET_ADMIN_PASSWORD}" \
+  --from-literal=db_username="moodle_admin" \
+  --from-literal=db_password="${MOODLE_DB_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "Done. Restarting app deployments to pick up new secret values..."
