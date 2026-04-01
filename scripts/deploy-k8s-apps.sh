@@ -598,12 +598,11 @@ fi
 if [[ -z "${ODOO_IMAGE}" || "${ODOO_IMAGE}" == *":latest" ]]; then
   _ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
   ODOO_IMAGE="$(resolve_latest_ecr_image "${_ACCOUNT_ID}" "${AWS_REGION}" "esm/odoo17" || true)"
-  if [[ -z "${ODOO_IMAGE}" ]]; then
-    echo "Error: unable to resolve latest tagged Odoo image from ECR repo 'esm/odoo17'." >&2
-    echo "Pass --odoo-image explicitly, or push a tagged image first." >&2
-    exit 1
-  fi
   unset _ACCOUNT_ID
+fi
+if [[ -z "${ODOO_IMAGE}" ]]; then
+  echo "Warning: no ECR image found for esm/odoo17; falling back to public image odoo:17." >&2
+  ODOO_IMAGE="odoo:17"
 fi
 echo "Using Odoo image: ${ODOO_IMAGE}"
 
@@ -618,8 +617,8 @@ if [[ -z "${OSTICKET_IMAGE}" || "${OSTICKET_IMAGE}" == *":latest" ]]; then
   unset _ACCOUNT_ID
 fi
 if [[ -z "${OSTICKET_IMAGE}" ]]; then
-  echo "Error: unable to resolve osTicket image. Pass --osticket-image explicitly or push a tagged image to esm/osticket in ECR." >&2
-  exit 1
+  echo "Warning: no ECR image found for esm/osticket; falling back to public image campbellsoftware/osticket:1.18.1." >&2
+  OSTICKET_IMAGE="campbellsoftware/osticket:1.18.1"
 fi
 echo "Using osTicket image: ${OSTICKET_IMAGE}"
 

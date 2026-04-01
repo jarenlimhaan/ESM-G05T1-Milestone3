@@ -364,6 +364,8 @@ CLUSTER_NAME="$(terraform -chdir="${TERRAFORM_DIR}" output -raw eks_cluster_name
 ODOO_DB_ENDPOINT="$(terraform -chdir="${TERRAFORM_DIR}" output -raw odoo_rds_endpoint)"
 ODOO_DB_NAME="$(terraform -chdir="${TERRAFORM_DIR}" output -raw odoo_db_name)"
 MOODLE_DB_ENDPOINT="$(terraform -chdir="${TERRAFORM_DIR}" output -raw moodle_rds_endpoint)"
+EFS_ID="$(terraform -chdir="${TERRAFORM_DIR}" output -raw efs_id)"
+EFS_ACCESS_POINT_ID="$(terraform -chdir="${TERRAFORM_DIR}" output -raw efs_odoo_access_point_id)"
 if [[ -z "${AWS_REGION}" ]]; then
   AWS_REGION="$(terraform -chdir="${TERRAFORM_DIR}" output -raw aws_region)"
 fi
@@ -398,7 +400,8 @@ ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
 # If no --osticket-image was passed, resolve the latest tag from ECR dynamically.
-if [[ -z "${OSTICKET_IMAGE}" ]]; then
+# Only required when actually deploying; skip when --skip-deploy is set.
+if [[ -z "${OSTICKET_IMAGE}" && "${SKIP_DEPLOY}" != "true" ]]; then
   OSTICKET_LATEST_TAG="$(resolve_latest_ecr_tag "${AWS_REGION}" "esm/osticket")"
   if [[ -n "${OSTICKET_LATEST_TAG}" && "${OSTICKET_LATEST_TAG}" != "None" ]]; then
     OSTICKET_IMAGE="${ECR_REGISTRY}/esm/osticket:${OSTICKET_LATEST_TAG}"
@@ -409,30 +412,34 @@ if [[ -z "${OSTICKET_IMAGE}" ]]; then
     exit 1
   fi
 fi
-echo "Using osTicket image: ${OSTICKET_IMAGE}"
+if [[ -n "${OSTICKET_IMAGE}" ]]; then
+  echo "Using osTicket image: ${OSTICKET_IMAGE}"
+fi
 
-if [[ -z "${TARGET_IMAGE}" && "${SKIP_IMAGE_PUSH}" == "true" ]]; then
-  TARGET_IMAGE="$(kubectl get deployment odoo-private -n odoo-private -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-fi
-if [[ -z "${TARGET_IMAGE}" && "${SKIP_IMAGE_PUSH}" == "true" ]]; then
-  LATEST_ECR_TAG="$(resolve_latest_ecr_tag "${AWS_REGION}" "${ECR_REPO_NAME}")"
-  if [[ -n "${LATEST_ECR_TAG}" && "${LATEST_ECR_TAG}" != "None" ]]; then
-    TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPO_NAME}:${LATEST_ECR_TAG}"
-    echo "Resolved latest ECR image for --skip-image-push: ${TARGET_IMAGE}"
-  else
-    echo "Error: --skip-image-push requires --target-image, an existing odoo-private deployment image, or a tagged image in ECR repo '${ECR_REPO_NAME}'." >&2
-    exit 1
+if [[ "${SKIP_DEPLOY}" != "true" ]]; then
+  if [[ -z "${TARGET_IMAGE}" && "${SKIP_IMAGE_PUSH}" == "true" ]]; then
+    TARGET_IMAGE="$(kubectl get deployment odoo-private -n odoo-private -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
   fi
-fi
-if [[ "${SKIP_IMAGE_PUSH}" == "true" && "${TARGET_IMAGE}" == *":latest" ]]; then
-  LATEST_ECR_TAG="$(resolve_latest_ecr_tag "${AWS_REGION}" "${ECR_REPO_NAME}")"
-  if [[ -n "${LATEST_ECR_TAG}" && "${LATEST_ECR_TAG}" != "None" ]]; then
-    TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPO_NAME}:${LATEST_ECR_TAG}"
-    echo "Replaced :latest with latest tagged ECR image: ${TARGET_IMAGE}"
+  if [[ -z "${TARGET_IMAGE}" && "${SKIP_IMAGE_PUSH}" == "true" ]]; then
+    LATEST_ECR_TAG="$(resolve_latest_ecr_tag "${AWS_REGION}" "${ECR_REPO_NAME}")"
+    if [[ -n "${LATEST_ECR_TAG}" && "${LATEST_ECR_TAG}" != "None" ]]; then
+      TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPO_NAME}:${LATEST_ECR_TAG}"
+      echo "Resolved latest ECR image for --skip-image-push: ${TARGET_IMAGE}"
+    else
+      echo "Error: --skip-image-push requires --target-image, an existing odoo-private deployment image, or a tagged image in ECR repo '${ECR_REPO_NAME}'." >&2
+      exit 1
+    fi
   fi
-fi
-if [[ -z "${TARGET_IMAGE}" ]]; then
-  TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPO_NAME}:${IMAGE_TAG}"
+  if [[ "${SKIP_IMAGE_PUSH}" == "true" && "${TARGET_IMAGE}" == *":latest" ]]; then
+    LATEST_ECR_TAG="$(resolve_latest_ecr_tag "${AWS_REGION}" "${ECR_REPO_NAME}")"
+    if [[ -n "${LATEST_ECR_TAG}" && "${LATEST_ECR_TAG}" != "None" ]]; then
+      TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPO_NAME}:${LATEST_ECR_TAG}"
+      echo "Replaced :latest with latest tagged ECR image: ${TARGET_IMAGE}"
+    fi
+  fi
+  if [[ -z "${TARGET_IMAGE}" ]]; then
+    TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPO_NAME}:${IMAGE_TAG}"
+  fi
 fi
 
 if [[ "${SKIP_IMAGE_PUSH}" != "true" ]]; then
@@ -563,6 +570,62 @@ gunzip -c /tmp/odoo.sql.gz | psql -h '${ODOO_DB_HOST}' -U '${ODOO_DB_USER}' -d '
 fi
 
 if [[ "${SKIP_FILESTORE_SYNC}" != "true" ]]; then
+  # Ensure the PV and PVC exist before mounting them in the sync pod.
+  # deploy-k8s-apps.sh normally creates these; we do it here for the standalone restore path.
+  if ! kubectl get pvc odoo-pvc -n odoo-private >/dev/null 2>&1; then
+    echo "Creating efs-static StorageClass and odoo-pvc (EFS: ${EFS_ID} / ${EFS_ACCESS_POINT_ID})..."
+    cat <<PVEOF | kubectl apply -f - >/dev/null
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: efs-static
+provisioner: efs.csi.aws.com
+volumeBindingMode: Immediate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: odoo-efs-pv
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: efs-static
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: "${EFS_ID}::${EFS_ACCESS_POINT_ID}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: odoo-pvc
+  namespace: odoo-private
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: efs-static
+  volumeName: odoo-efs-pv
+PVEOF
+    # Wait for PVC to bind
+    for _i in $(seq 1 12); do
+      PVC_STATUS="$(kubectl get pvc odoo-pvc -n odoo-private -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+      if [[ "${PVC_STATUS}" == "Bound" ]]; then break; fi
+      echo "  Waiting for odoo-pvc to bind (${PVC_STATUS})..."
+      sleep 5
+    done
+    PVC_STATUS="$(kubectl get pvc odoo-pvc -n odoo-private -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+    if [[ "${PVC_STATUS}" != "Bound" ]]; then
+      echo "Error: odoo-pvc did not bind within 60s (status: ${PVC_STATUS}). Check the EFS CSI driver and StorageClass." >&2
+      exit 1
+    fi
+  fi
+
   POD_NAME="odoo-filestore-sync-$(date +%s)"
   echo "Starting filestore sync pod ${POD_NAME}..."
   cat <<EOF | kubectl apply -f - >/dev/null

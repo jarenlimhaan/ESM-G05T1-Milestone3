@@ -153,9 +153,9 @@ kubectl create secret generic osticket-db -n osticket-private \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "Done. Restarting app deployments to pick up new secret values..."
-kubectl rollout restart deployment/odoo-private -n odoo-private
-kubectl rollout restart deployment/odoo-public -n odoo-public
-kubectl rollout restart deployment/moodle -n moodle-private
-kubectl rollout restart deployment/osticket -n osticket-private
+kubectl get deployment/odoo-private  -n odoo-private   &>/dev/null && kubectl rollout restart deployment/odoo-private  -n odoo-private   || echo "  [skip] odoo-private not deployed yet"
+kubectl get deployment/odoo-public   -n odoo-public    &>/dev/null && kubectl rollout restart deployment/odoo-public   -n odoo-public    || echo "  [skip] odoo-public not deployed yet"
+kubectl get deployment/moodle        -n moodle-private &>/dev/null && kubectl rollout restart deployment/moodle        -n moodle-private || echo "  [skip] moodle not deployed yet"
+kubectl get deployment/osticket      -n osticket-private &>/dev/null && kubectl rollout restart deployment/osticket    -n osticket-private || echo "  [skip] osticket not deployed yet"
 
 echo "Secret sync complete."
