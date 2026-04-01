@@ -431,6 +431,16 @@ AUDIT:
   CloudTrail ARN: ${coalesce(module.cloudtrail.trail_arn, "disabled")}
   CloudTrail Bucket: ${coalesce(module.cloudtrail.s3_bucket_name, "disabled")}
 
+SECRETS MANAGER (auto-created by Terraform):
+  Odoo DB Password:     ${var.odoo_db_password_secret_id}
+  Moodle DB Password:   ${var.moodle_db_password_secret_id}
+  osTicket DB Password: ${var.osticket_db_password_secret_id}
+
+  NOTE: osticket_install_secret and osticket_admin_password are NOT stored in
+  Secrets Manager. Pass them to render-k8s-for-argocd.sh or sync-k8s-secrets-from-aws.sh:
+    --osticket-install-secret "<value>"
+    --osticket-admin-password "<value>"
+
 ================================================================================
                               NEXT STEPS
 ================================================================================
@@ -446,7 +456,16 @@ AUDIT:
 2. CONFIGURE KUBECTL:
    - Run: aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.aws_region}
 
-3. DEPLOY AND VERIFY APPLICATIONS:
+3. SYNC KUBERNETES SECRETS FROM SECRETS MANAGER:
+   - Run: ./scripts/sync-k8s-secrets-from-aws.sh \
+       --region ${var.aws_region} \
+       --osticket-install-secret "<your-osticket-install-secret>" \
+       --osticket-admin-password "<your-osticket-admin-password>"
+   - This fetches DB passwords from Secrets Manager and applies them as K8s Secrets.
+   - Must be run once before pods can start successfully (pods reference these secrets).
+   - The CI/CD deploy workflow also runs this automatically on every deploy.
+
+4. DEPLOY AND VERIFY APPLICATIONS:
    - Run: ./scripts/deploy-k8s-apps.sh --odoo-image odoo:17 --skip-odoo-rollout-wait
    - Then check pods per namespace:
        kubectl get pods -n odoo-public
@@ -458,7 +477,7 @@ AUDIT:
    - Access Moodle Internal: ${module.dns.moodle_internal_fqdn != null ? "http://${module.dns.moodle_internal_fqdn}" : "http://${module.alb_internal.alb_dns_name}/moodle"}
    - osTicket Internal: ${module.dns.osticket_internal_fqdn != null ? "http://${module.dns.osticket_internal_fqdn}/scp/" : "http://${module.alb_internal.alb_dns_name}/osticket/scp/"}
 
-4. BOOTSTRAP ODOO DATA (required after every fresh deploy):
+5. BOOTSTRAP ODOO DATA (required after every fresh deploy):
    - Run: ./scripts/deploy-odoo-image-to-eks.sh --skip-image-push --target-image odoo:17 --skip-deploy --skip-module-upgrade
    - This restores the SQL dump (data/odoo17/odoo.sql.gz) into RDS and syncs filestore/ into EFS.
    - Without this step Odoo will start but have no real data.
@@ -467,7 +486,7 @@ AUDIT:
          mysql -h <moodle-rds-host> -u moodle_admin -p<moodle-password> moodledb \
          -e "UPDATE mdl_user SET lastip='' WHERE username='admin';"
 
-5. VERIFY BACKUPS:
+6. VERIFY BACKUPS:
    - Navigate to AWS Backup console
    - Check backup jobs and vault status
 
@@ -478,4 +497,58 @@ EOT
 output "aws_region" {
   description = "AWS region used by this stack"
   value       = var.aws_region
+}
+
+# ==============================================================================
+# Secrets Manager Outputs
+# ==============================================================================
+
+output "secrets_manager_info" {
+  description = "Secrets created in AWS Secrets Manager and what still needs to be supplied manually"
+  value       = <<EOT
+================================================================================
+                     AWS Secrets Manager — What Was Created
+================================================================================
+
+The following secrets were AUTOMATICALLY created by Terraform on apply.
+You do NOT need to pass these as CLI arguments to scripts.
+
+  Secret name: ${var.odoo_db_password_secret_id}
+  Contains: Odoo PostgreSQL password (set via var.odoo_db_password in terraform.tfvars)
+  Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
+               --secret-id ${var.odoo_db_password_secret_id} --query SecretString --output text
+
+  Secret name: ${var.moodle_db_password_secret_id}
+  Contains: Moodle MySQL password (set via var.moodle_db_password in terraform.tfvars)
+  Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
+               --secret-id ${var.moodle_db_password_secret_id} --query SecretString --output text
+
+  Secret name: ${var.osticket_db_password_secret_id}
+  Contains: osTicket MySQL password (set via var.osticket_db_password in terraform.tfvars)
+  Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
+               --secret-id ${var.osticket_db_password_secret_id} --query SecretString --output text
+
+================================================================================
+                  What You Still Need to Provide Manually
+================================================================================
+
+The following two values are NOT stored in Secrets Manager.
+You must pass them explicitly when syncing K8s secrets or rendering manifests:
+
+  --osticket-install-secret   osTicket's internal signing secret (long random string)
+  --osticket-admin-password   Password for the osTicket web admin account
+
+  Example:
+    ./scripts/sync-k8s-secrets-from-aws.sh \
+      --region ${var.aws_region} \
+      --osticket-install-secret "<your-install-secret>" \
+      --osticket-admin-password "<your-admin-password>"
+
+  To avoid passing them on every run, add them to a .env file in the repo root:
+    INSTALL_SECRET=<your-install-secret>
+    ADMIN_PASSWORD=<your-admin-password>
+  (The .env file is gitignored and read automatically by the scripts.)
+
+================================================================================
+EOT
 }
