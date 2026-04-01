@@ -436,10 +436,12 @@ SECRETS MANAGER (auto-created by Terraform):
   Moodle DB Password:   ${var.moodle_db_password_secret_id}
   osTicket DB Password: ${var.osticket_db_password_secret_id}
 
-  NOTE: osticket_install_secret and osticket_admin_password are NOT stored in
-  Secrets Manager. Pass them to render-k8s-for-argocd.sh or sync-k8s-secrets-from-aws.sh:
-    --osticket-install-secret "<value>"
-    --osticket-admin-password "<value>"
+  NOT in Secrets Manager — loaded from .env or CLI arg:
+    moodle_admin_password    -> .env key: MOODLE_ADMIN_PASSWORD
+    osticket_install_secret  -> .env key: INSTALL_SECRET
+    osticket_admin_password  -> .env key: ADMIN_PASSWORD
+
+  See .env.example at the repo root for the full template.
 
 ================================================================================
                               NEXT STEPS
@@ -457,10 +459,14 @@ SECRETS MANAGER (auto-created by Terraform):
    - Run: aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.aws_region}
 
 3. SYNC KUBERNETES SECRETS FROM SECRETS MANAGER:
-   - Run: ./scripts/sync-k8s-secrets-from-aws.sh \
-       --region ${var.aws_region} \
-       --osticket-install-secret "<your-osticket-install-secret>" \
-       --osticket-admin-password "<your-osticket-admin-password>"
+   - Recommended: add credentials to .env at repo root (see .env.example), then run:
+       ./scripts/sync-k8s-secrets-from-aws.sh --region ${var.aws_region}
+   - Or pass explicitly:
+       ./scripts/sync-k8s-secrets-from-aws.sh \
+           --region ${var.aws_region} \
+           --moodle-admin-password "<your-moodle-admin-password>" \
+           --osticket-install-secret "<your-osticket-install-secret>" \
+           --osticket-admin-password "<your-osticket-admin-password>"
    - This fetches DB passwords from Secrets Manager and applies them as K8s Secrets.
    - Must be run once before pods can start successfully (pods reference these secrets).
    - The CI/CD deploy workflow also runs this automatically on every deploy.
@@ -532,22 +538,25 @@ You do NOT need to pass these as CLI arguments to scripts.
                   What You Still Need to Provide Manually
 ================================================================================
 
-The following two values are NOT stored in Secrets Manager.
-You must pass them explicitly when syncing K8s secrets or rendering manifests:
+The following values are NOT stored in Secrets Manager.
+They are read from .env at repo root (see .env.example) or passed as CLI args:
 
-  --osticket-install-secret   osTicket's internal signing secret (long random string)
-  --osticket-admin-password   Password for the osTicket web admin account
+  --moodle-admin-password     Moodle web admin password       (.env: MOODLE_ADMIN_PASSWORD)
+  --osticket-install-secret   osTicket internal signing key   (.env: INSTALL_SECRET)
+  --osticket-admin-password   osTicket web admin password     (.env: ADMIN_PASSWORD)
 
-  Example:
+  Recommended — create .env once and scripts read it automatically:
+    MOODLE_ADMIN_PASSWORD=<your-moodle-admin-password>
+    INSTALL_SECRET=<your-osticket-install-secret>
+    ADMIN_PASSWORD=<your-osticket-admin-password>
+  (The .env file is gitignored. See .env.example for the full template.)
+
+  If passing explicitly:
     ./scripts/sync-k8s-secrets-from-aws.sh \
       --region ${var.aws_region} \
+      --moodle-admin-password "<your-moodle-admin-password>" \
       --osticket-install-secret "<your-install-secret>" \
       --osticket-admin-password "<your-admin-password>"
-
-  To avoid passing them on every run, add them to a .env file in the repo root:
-    INSTALL_SECRET=<your-install-secret>
-    ADMIN_PASSWORD=<your-admin-password>
-  (The .env file is gitignored and read automatically by the scripts.)
 
 ================================================================================
 EOT
