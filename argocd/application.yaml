@@ -20,6 +20,10 @@ spec:
       kind: PersistentVolume
       jsonPointers:
         - /spec/claimRef          # Kubernetes auto-populates this when PV is bound
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas          # HPA owns this field when active — ignore drift
 
   syncPolicy:
     automated:
