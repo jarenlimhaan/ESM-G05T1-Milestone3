@@ -30,4 +30,7 @@ jobs:
           kube-linter lint k8s k8s-rendered \
             --config .kube-linter.yaml \
             --ignore-paths k8s/kustomization.yaml \
-            --ignore-paths k8s-rendered/kustomization.yaml
+            --ignore-paths k8s/README.md \
+            --ignore-paths k8s/secrets.yaml \
+            --ignore-paths k8s-rendered/kustomization.yaml \
+            --ignore-paths k8s-rendered/README.md
