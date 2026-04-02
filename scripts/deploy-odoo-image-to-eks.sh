@@ -25,9 +25,12 @@ Usage:
     [--skip-deploy] \
     [--skip-db-restore] \
     [--skip-osticket-db-restore] \
+    [--skip-moodle-db-restore] \
     [--skip-filestore-sync] \
     [--skip-module-upgrade] \
     [--sql-dump-file data/odoo17/odoo.sql.gz] \
+    [--moodle-sql-dump-file data/moodle/moodle.sql.gz] \
+    [--moodle-db-name moodledb] \
     [--osticket-sql-dump-file data/osticket/osticket.sql.gz] \
     [--filestore-dir filestore/odoo] \
     [--osticket-db-name osticketdb] \
@@ -117,6 +120,8 @@ if [[ -z "${OSTICKET_ADMIN_PASSWORD}" ]]; then
 fi
 
 SQL_DUMP_FILE="${REPO_ROOT}/data/odoo17/odoo.sql.gz"
+MOODLE_SQL_DUMP_FILE="${REPO_ROOT}/data/moodle/moodle.sql.gz"
+MOODLE_DB_NAME="moodledb"
 OSTICKET_SQL_DUMP_FILE="${REPO_ROOT}/data/osticket/osticket.sql.gz"
 FILESTORE_DIR="${REPO_ROOT}/filestore/odoo"
 MODULE_UPGRADE_LIST="helpdesk_mgmt,helpdesk_mgmt_merge,helpdesk_mgmt_project,helpdesk_mgmt_sale,helpdesk_ticket_related,helpdesk_type"
@@ -125,11 +130,13 @@ SKIP_IMAGE_PUSH="false"
 SKIP_DEPLOY="false"
 SKIP_DB_RESTORE="false"
 SKIP_OSTICKET_DB_RESTORE="false"
+SKIP_MOODLE_DB_RESTORE="false"
 SKIP_FILESTORE_SYNC="false"
 SKIP_MODULE_UPGRADE="false"
 PROVISION_INFRA="false"
 ODOO_SCALED_DOWN="false"
 OSTICKET_SCALED_DOWN="false"
+MOODLE_SCALED_DOWN="false"
 
 restore_scaled_workloads_on_failure() {
   local exit_code=$?
@@ -144,6 +151,9 @@ restore_scaled_workloads_on_failure() {
   fi
   if [[ "${OSTICKET_SCALED_DOWN}" == "true" ]]; then
     kubectl scale deployment/osticket -n osticket-private --replicas=1 >/dev/null 2>&1 || true
+  fi
+  if [[ "${MOODLE_SCALED_DOWN}" == "true" ]]; then
+    kubectl scale deployment/moodle -n moodle-private --replicas=1 >/dev/null 2>&1 || true
   fi
 }
 
@@ -231,6 +241,14 @@ while [[ $# -gt 0 ]]; do
       OSTICKET_SQL_DUMP_FILE="$2"
       shift 2
       ;;
+    --moodle-sql-dump-file)
+      MOODLE_SQL_DUMP_FILE="$2"
+      shift 2
+      ;;
+    --moodle-db-name)
+      MOODLE_DB_NAME="$2"
+      shift 2
+      ;;
     --filestore-dir)
       FILESTORE_DIR="$2"
       shift 2
@@ -249,6 +267,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-osticket-db-restore)
       SKIP_OSTICKET_DB_RESTORE="true"
+      shift
+      ;;
+    --skip-moodle-db-restore)
+      SKIP_MOODLE_DB_RESTORE="true"
       shift
       ;;
     --skip-filestore-sync)
@@ -283,6 +305,9 @@ if [[ "${SQL_DUMP_FILE}" != /* ]]; then
 fi
 if [[ "${OSTICKET_SQL_DUMP_FILE}" != /* ]]; then
   OSTICKET_SQL_DUMP_FILE="${REPO_ROOT}/${OSTICKET_SQL_DUMP_FILE}"
+fi
+if [[ "${MOODLE_SQL_DUMP_FILE}" != /* ]]; then
+  MOODLE_SQL_DUMP_FILE="${REPO_ROOT}/${MOODLE_SQL_DUMP_FILE}"
 fi
 if [[ "${FILESTORE_DIR}" != /* ]]; then
   FILESTORE_DIR="${REPO_ROOT}/${FILESTORE_DIR}"
@@ -352,6 +377,10 @@ if [[ "${SKIP_DB_RESTORE}" != "true" && ! -f "${SQL_DUMP_FILE}" ]]; then
 fi
 if [[ "${SKIP_OSTICKET_DB_RESTORE}" != "true" && ! -f "${OSTICKET_SQL_DUMP_FILE}" ]]; then
   echo "Error: osTicket SQL dump not found: ${OSTICKET_SQL_DUMP_FILE}" >&2
+  exit 1
+fi
+if [[ "${SKIP_MOODLE_DB_RESTORE}" != "true" && ! -f "${MOODLE_SQL_DUMP_FILE}" ]]; then
+  echo "Error: Moodle SQL dump not found: ${MOODLE_SQL_DUMP_FILE}" >&2
   exit 1
 fi
 if [[ "${SKIP_FILESTORE_SYNC}" != "true" && ! -d "${FILESTORE_DIR}" ]]; then
@@ -534,6 +563,16 @@ if [[ "${SKIP_OSTICKET_DB_RESTORE}" != "true" ]]; then
   OSTICKET_SCALED_DOWN="true"
 fi
 
+if [[ "${SKIP_MOODLE_DB_RESTORE}" != "true" ]]; then
+  if [[ -z "${MOODLE_DB_HOST}" || -z "${MOODLE_DB_USER}" || -z "${MOODLE_DB_NAME}" || -z "${MOODLE_DB_PASSWORD}" ]]; then
+    echo "Error: missing Moodle restore connection values (host/user/db/password)." >&2
+    exit 1
+  fi
+  echo "Scaling Moodle deployment down during DB restore..."
+  kubectl scale deployment/moodle -n moodle-private --replicas=0 >/dev/null || true
+  MOODLE_SCALED_DOWN="true"
+fi
+
 if [[ "${SKIP_DB_RESTORE}" != "true" ]]; then
   POD_NAME="odoo-db-restore-$(date +%s)"
   echo "Starting DB restore pod ${POD_NAME}..."
@@ -685,6 +724,34 @@ gunzip -c /tmp/osticket.sql.gz | mysql -h '${MOODLE_DB_HOST}' -u '${OSTICKET_DB_
   echo "osTicket DB restore completed."
 fi
 
+if [[ "${SKIP_MOODLE_DB_RESTORE}" != "true" ]]; then
+  POD_NAME="moodle-db-restore-$(date +%s)"
+  echo "Starting Moodle DB restore pod ${POD_NAME}..."
+  cat <<EOF | kubectl apply -f - >/dev/null
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD_NAME}
+  namespace: moodle-private
+spec:
+  restartPolicy: Never
+  containers:
+    - name: mysql
+      image: mysql:8.0
+      command: ["sh", "-c", "sleep 3600"]
+EOF
+  kubectl wait --for=condition=Ready "pod/${POD_NAME}" -n moodle-private --timeout=180s >/dev/null
+  kubectl exec -i -n moodle-private "${POD_NAME}" -- sh -ceu "cat > /tmp/moodle.sql.gz" < "${MOODLE_SQL_DUMP_FILE}"
+  kubectl exec -n moodle-private "${POD_NAME}" -- sh -ceu "
+export MYSQL_PWD='${MOODLE_DB_PASSWORD}';
+mysql -h '${MOODLE_DB_HOST}' -u '${MOODLE_DB_USER}' -e \"DROP DATABASE IF EXISTS ${MOODLE_DB_NAME};\";
+mysql -h '${MOODLE_DB_HOST}' -u '${MOODLE_DB_USER}' -e \"CREATE DATABASE ${MOODLE_DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\";
+gunzip -c /tmp/moodle.sql.gz | mysql -h '${MOODLE_DB_HOST}' -u '${MOODLE_DB_USER}' '${MOODLE_DB_NAME}';
+"
+  kubectl delete pod "${POD_NAME}" -n moodle-private --ignore-not-found >/dev/null
+  echo "Moodle DB restore completed."
+fi
+
 if [[ "${SKIP_MODULE_UPGRADE}" != "true" ]]; then
   JOB_NAME="odoo-module-upgrade-$(date +%s)"
   echo "Running module upgrade job ${JOB_NAME}..."
@@ -744,10 +811,19 @@ if [[ "${SKIP_OSTICKET_DB_RESTORE}" != "true" ]]; then
   OSTICKET_SCALED_DOWN="false"
 fi
 
+if [[ "${SKIP_MOODLE_DB_RESTORE}" != "true" ]]; then
+  echo "Scaling Moodle deployment up..."
+  kubectl scale deployment/moodle -n moodle-private --replicas=1 >/dev/null || true
+  kubectl rollout status deployment/moodle -n moodle-private --timeout=300s
+  MOODLE_SCALED_DOWN="false"
+fi
+
 echo
 echo "Done."
 echo "Deployed image: ${TARGET_IMAGE}"
 echo "Odoo DB host: ${ODOO_DB_HOST}"
 echo "Odoo DB name: ${ODOO_DB_NAME}"
+echo "Moodle DB host: ${MOODLE_DB_HOST}"
+echo "Moodle DB name: ${MOODLE_DB_NAME}"
 echo "osTicket DB host: ${MOODLE_DB_HOST}"
 echo "osTicket DB name: ${OSTICKET_DB_NAME}"
