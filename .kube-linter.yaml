@@ -52,3 +52,10 @@ checks:
     # --- kube-linter quirk: Deployments have no restartPolicy field;
     #     linter reads empty string and flags it, but effective policy is Always ---
     - "restart-policy"
+
+    # --- Runtime-provisioned secrets: false positive ---
+    # odoo-db, moodle-db, and osticket-db secrets are created at deploy time
+    # by sync-k8s-secrets-from-aws.sh from AWS Secrets Manager. They are never
+    # committed to git (intentional). kube-linter cannot see cluster-live secrets,
+    # so env-value-from would always flag these as unknown — exclude it.
+    - "env-value-from"
