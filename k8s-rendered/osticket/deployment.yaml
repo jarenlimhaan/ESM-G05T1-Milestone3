@@ -25,15 +25,12 @@ spec:
             - name: MYSQL_DATABASE
               value: "osticketdb"
             - name: MYSQL_USER
-              valueFrom:
-                secretKeyRef:
-                  name: osticket-db
-                  key: db_username
+              value: "moodle_admin"
             - name: MYSQL_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: osticket-db
-                  key: db_password
+                  key: password
             - name: INSTALL_SECRET
               valueFrom:
                 secretKeyRef:

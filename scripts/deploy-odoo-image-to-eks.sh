@@ -29,7 +29,7 @@ Usage:
     [--skip-filestore-sync] \
     [--skip-module-upgrade] \
     [--sql-dump-file data/odoo17/odoo.sql.gz] \
-    [--moodle-sql-dump-file data/moodle/moodle.sql.gz] \
+    [--moodle-sql-dump-file data/moodle-course-backup.mbz] \
     [--moodle-db-name moodledb] \
     [--osticket-sql-dump-file data/osticket/osticket.sql.gz] \
     [--filestore-dir filestore/odoo] \
@@ -120,7 +120,7 @@ if [[ -z "${OSTICKET_ADMIN_PASSWORD}" ]]; then
 fi
 
 SQL_DUMP_FILE="${REPO_ROOT}/data/odoo17/odoo.sql.gz"
-MOODLE_SQL_DUMP_FILE="${REPO_ROOT}/data/moodle/moodle.sql.gz"
+MOODLE_SQL_DUMP_FILE="${REPO_ROOT}/data/moodle-course-backup.mbz"
 MOODLE_DB_NAME="moodledb"
 OSTICKET_SQL_DUMP_FILE="${REPO_ROOT}/data/osticket/osticket.sql.gz"
 FILESTORE_DIR="${REPO_ROOT}/filestore/odoo"

@@ -147,7 +147,7 @@ resource "aws_cloudwatch_metric_alarm" "efs_burst_credit_low" {
   namespace           = "AWS/EFS"
   period              = "300"
   statistic           = "Average"
-  threshold           = 300000000 # 300 GB in bytes
+  threshold           = 322122547200 # 300 GiB in bytes (300 × 1,073,741,824)
   alarm_description   = "Alert when EFS burst credit balance is low"
   alarm_actions       = [aws_sns_topic.alerts.arn]
 

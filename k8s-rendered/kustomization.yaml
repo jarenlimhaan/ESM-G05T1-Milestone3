@@ -13,18 +13,18 @@ resources:
   - odoo/public-gateway-deployment.yaml
   - odoo/private-gateway-configmap.yaml
   - odoo/private-gateway-deployment.yaml
-  # HPA enabled for Phase 2
-  # - odoo/hpa.yaml
-  # - odoo/hpa-public.yaml
+  # HPA disabled for Phase 1 (fixed 3 replicas) — re-enable for Phase 2
+  - odoo/hpa.yaml
+  - odoo/hpa-public.yaml
   - odoo/service.yaml
   - odoo/service-public-backend.yaml
   - odoo/service-private-backend.yaml
   - odoo/service-public.yaml
   - moodle/deployment.yaml
-  # HPA enabled for Phase 2
-  # - moodle/hpa.yaml
+  # HPA disabled for Phase 1 (fixed 3 replicas) — re-enable for Phase 2
+  - moodle/hpa.yaml
   - moodle/service.yaml
   - osticket/deployment.yaml
-  # HPA enabled for Phase 2
-  # - osticket/hpa.yaml
+  # HPA disabled for Phase 1 (fixed 3 replicas) — re-enable for Phase 2
+  - osticket/hpa.yaml
   - osticket/service.yaml

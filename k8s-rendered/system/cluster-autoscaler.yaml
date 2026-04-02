@@ -142,7 +142,7 @@ spec:
             - --stderrthreshold=info
             - --v=4
             - --namespace=kube-system
-            - --nodes=2:5:eks-esm-enterprise-prod-node-group-18cea20a-f447-3078-45dc-039519312e24
+            - --nodes=2:5:eks-esm-enterprise-prod-node-group-14cea5f9-7040-fe86-dde2-15d1497ff6e6
           resources:
             requests:
               cpu: 100m
