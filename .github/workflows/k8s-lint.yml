@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "k8s/**"
+      - "k8s-rendered/**"
       - ".kube-linter.yaml"
       - ".github/workflows/k8s-lint.yml"
 
@@ -26,6 +27,7 @@ jobs:
 
       - name: Run kube-linter
         run: |
-          kube-linter lint k8s \
+          kube-linter lint k8s k8s-rendered \
             --config .kube-linter.yaml \
-            --ignore-paths k8s/kustomization.yaml
+            --ignore-paths k8s/kustomization.yaml \
+            --ignore-paths k8s-rendered/kustomization.yaml
