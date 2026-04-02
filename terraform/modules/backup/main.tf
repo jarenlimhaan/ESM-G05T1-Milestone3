@@ -141,12 +141,12 @@ resource "aws_sns_topic_policy" "backup_notifications" {
 # CloudWatch Alarms for Backup Jobs
 # ==============================================================================
 
+# NumberOfBackupJobsFailed is the correct account-wide AWS/Backup metric.
+# BackupJobStatus does not exist and would never fire.
 resource "aws_cloudwatch_metric_alarm" "backup_job_failed" {
   alarm_name          = "${var.project_name}-${var.environment}-backup-job-failed"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
-  # NumberOfBackupJobsFailed is the real AWS/Backup metric (no-dimension, account-wide).
-  # BackupJobStatus does not exist in this namespace and would never fire.
   metric_name         = "NumberOfBackupJobsFailed"
   namespace           = "AWS/Backup"
   period              = "300"
