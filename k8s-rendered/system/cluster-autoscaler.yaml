@@ -4,7 +4,7 @@ metadata:
   name: cluster-autoscaler
   namespace: kube-system
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::233151233551:role/esm-enterprise-prod-cluster-autoscaler-role
+    eks.amazonaws.com/role-arn: arn:aws:iam::990521646880:role/esm-enterprise-prod-cluster-autoscaler-role
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -142,7 +142,7 @@ spec:
             - --stderrthreshold=info
             - --v=4
             - --namespace=kube-system
-            - --nodes=2:5:eks-esm-enterprise-prod-node-group-a8cea17e-6f34-74b7-9a4c-763816e91eda
+            - --nodes=2:5:eks-esm-enterprise-prod-node-group-14cea5f9-7040-fe86-dde2-15d1497ff6e6
           resources:
             requests:
               cpu: 100m

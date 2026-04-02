@@ -4,7 +4,7 @@ metadata:
   name: odoo-public
   namespace: odoo-public
 spec:
-  replicas: 1
+  replicas: 3
   strategy:
     type: Recreate
   selector:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: odoo
-          image: "233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/odoo17:20260326-114419"
+          image: "odoo:17"
           imagePullPolicy: IfNotPresent
           args:
             - "--database=odoodb"
@@ -26,7 +26,7 @@ spec:
             - containerPort: 8069
           env:
             - name: HOST
-              value: "esm-enterprise-prod-odoo.cn82a6ooiios.ap-southeast-1.rds.amazonaws.com"
+              value: "esm-enterprise-prod-odoo.c9asmcmsm7pz.ap-southeast-1.rds.amazonaws.com"
             - name: PORT
               value: "5432"
             - name: USER

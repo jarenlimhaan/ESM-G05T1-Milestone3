@@ -4,7 +4,7 @@ metadata:
   name: osticket
   namespace: osticket-private
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: osticket
@@ -15,13 +15,13 @@ spec:
     spec:
       containers:
         - name: osticket
-          image: "233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket:custom-20260331-102635"
+          image: "devinsolutions/osticket:1.17.5"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
           env:
             - name: MYSQL_HOST
-              value: "esm-enterprise-prod-moodle.cn82a6ooiios.ap-southeast-1.rds.amazonaws.com"
+              value: "esm-enterprise-prod-moodle.c9asmcmsm7pz.ap-southeast-1.rds.amazonaws.com"
             - name: MYSQL_DATABASE
               value: "osticketdb"
             - name: MYSQL_USER
@@ -37,17 +37,17 @@ spec:
                   name: osticket-db
                   key: install_secret
             - name: INSTALL_NAME
-              value: "ESM Support"
+              value: "My Helpdesk"
             - name: INSTALL_URL
               value: "http://osticket.internal.esm.local"
             - name: INSTALL_EMAIL
-              value: "helpdesk@esmos.meals.sg"
+              value: "helpdesk@example.com"
             - name: ADMIN_FIRSTNAME
               value: "Admin"
             - name: ADMIN_LASTNAME
               value: "User"
             - name: ADMIN_EMAIL
-              value: "admin@esmos.meals.sg"
+              value: "admin@example.com"
             - name: ADMIN_USERNAME
               value: "ostadmin"
             - name: ADMIN_PASSWORD

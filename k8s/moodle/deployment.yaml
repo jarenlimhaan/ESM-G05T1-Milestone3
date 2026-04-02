@@ -4,7 +4,7 @@ metadata:
   name: moodle
   namespace: moodle-private
 spec:
-  replicas: 1
+  replicas: 3
   strategy:
     type: Recreate
   selector:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: moodle
-          image: "ellakcy/moodle:mysql_maria_apache_latest"
+          image: "__MOODLE_IMAGE__"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
@@ -40,7 +40,10 @@ spec:
             - name: MOODLE_ADMIN
               value: "__MOODLE_ADMIN_USER__"
             - name: MOODLE_ADMIN_PASSWORD
-              value: "__MOODLE_ADMIN_PASSWORD__"
+              valueFrom:
+                secretKeyRef:
+                  name: moodle-db
+                  key: admin_password
             - name: MOODLE_ADMIN_EMAIL
               value: "__MOODLE_ADMIN_EMAIL__"
             - name: MOODLE_URL

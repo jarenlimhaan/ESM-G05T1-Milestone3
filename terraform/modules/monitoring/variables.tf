@@ -71,7 +71,7 @@ variable "moodle_namespace" {
 variable "moodle_pod_cpu_threshold" {
   description = "Average Moodle pod CPU utilization threshold (percent)"
   type        = number
-  default     = 80
+  default     = 70 # Matches HPA trigger threshold per monitoring spec
 }
 
 variable "enable_odoo_pod_cpu_alarm" {

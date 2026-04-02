@@ -55,7 +55,8 @@ Options:
   --terraform-dir        Terraform directory (default: terraform).
   --aws-region           AWS region. If omitted, read from Terraform output.
   --odoo-db-user         Odoo DB user (default: odoo_admin).
-  --odoo-image           Odoo container image (default: odoo:16.0).
+  --odoo-image           Odoo container image (default: resolved from running cluster deployment or
+                         ECR repo esm/odoo17; falls back to error if neither is available).
   --moodle-db-user       Moodle DB user (default: moodle_admin).
   --moodle-db-name       Moodle DB name (default: moodledb).
   --moodle-image         Moodle container image (default: ellakcy/moodle:mysql_maria_apache_latest).
@@ -64,7 +65,7 @@ Options:
                          Moodle admin password (default: Admin~1234).
   --moodle-admin-email   Moodle admin email (default: admin@esmos.meals.sg).
   --moodle-url           Moodle URL (default: http://moodle.internal.esm.local).
-  --osticket-image       osTicket container image (default: 233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket:custom-20260331-102635).
+  --osticket-image       osTicket container image (default: latest image from ECR repo esm/osticket, resolved at runtime).
   --osticket-db-host     osTicket DB host. Defaults to Moodle DB host output.
   --osticket-db-user     osTicket DB user (default: moodle_admin).
   --osticket-db-name     osTicket DB name (default: osticketdb).
@@ -266,14 +267,23 @@ MOODLE_DB_USER="moodle_admin"
 MOODLE_DB_PASSWORD=""
 MOODLE_DB_NAME="moodledb"
 MOODLE_IMAGE="ellakcy/moodle:mysql_maria_apache_latest"
-MOODLE_ADMIN_USER="admin"
-MOODLE_ADMIN_PASSWORD="Admin~1234"
-MOODLE_ADMIN_EMAIL="admin@esmos.meals.sg"
-MOODLE_URL="http://moodle.internal.esm.local"
-OSTICKET_IMAGE="$(read_dotenv_value OSTICKET_IMAGE)"
-if [[ -z "${OSTICKET_IMAGE}" ]]; then
-  OSTICKET_IMAGE="233151233551.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket:custom-20260331-102635"
+MOODLE_ADMIN_USER="$(read_dotenv_value MOODLE_ADMIN_USER)"
+if [[ -z "${MOODLE_ADMIN_USER}" ]]; then
+  MOODLE_ADMIN_USER="admin"
 fi
+MOODLE_ADMIN_PASSWORD="$(read_dotenv_value MOODLE_ADMIN_PASSWORD)"
+if [[ -z "${MOODLE_ADMIN_PASSWORD}" ]]; then
+  MOODLE_ADMIN_PASSWORD="Admin~1234"
+fi
+MOODLE_ADMIN_EMAIL="$(read_dotenv_value MOODLE_ADMIN_EMAIL)"
+if [[ -z "${MOODLE_ADMIN_EMAIL}" ]]; then
+  MOODLE_ADMIN_EMAIL="admin@esmos.meals.sg"
+fi
+MOODLE_URL="$(read_dotenv_value MOODLE_URL)"
+if [[ -z "${MOODLE_URL}" ]]; then
+  MOODLE_URL="http://moodle.internal.esm.local"
+fi
+OSTICKET_IMAGE="$(read_dotenv_value OSTICKET_IMAGE)"
 OSTICKET_DB_HOST="$(read_dotenv_value OSTICKET_DB_HOST)"
 OSTICKET_DB_USER="$(read_dotenv_value OSTICKET_DB_USER)"
 if [[ -z "${OSTICKET_DB_USER}" ]]; then
@@ -588,14 +598,29 @@ fi
 if [[ -z "${ODOO_IMAGE}" || "${ODOO_IMAGE}" == *":latest" ]]; then
   _ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
   ODOO_IMAGE="$(resolve_latest_ecr_image "${_ACCOUNT_ID}" "${AWS_REGION}" "esm/odoo17" || true)"
-  if [[ -z "${ODOO_IMAGE}" ]]; then
-    echo "Error: unable to resolve latest tagged Odoo image from ECR repo 'esm/odoo17'." >&2
-    echo "Pass --odoo-image explicitly, or push a tagged image first." >&2
-    exit 1
-  fi
   unset _ACCOUNT_ID
 fi
+if [[ -z "${ODOO_IMAGE}" ]]; then
+  echo "Warning: no ECR image found for esm/odoo17; falling back to public image odoo:17." >&2
+  ODOO_IMAGE="odoo:17"
+fi
 echo "Using Odoo image: ${ODOO_IMAGE}"
+
+# If no --osticket-image was passed, reuse the running image or resolve from ECR.
+if [[ -z "${OSTICKET_IMAGE}" && "${RENDER_ONLY}" != "true" ]]; then
+  OSTICKET_IMAGE="$(kubectl get deployment osticket -n osticket-private \
+    -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+fi
+if [[ -z "${OSTICKET_IMAGE}" || "${OSTICKET_IMAGE}" == *":latest" ]]; then
+  _ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+  OSTICKET_IMAGE="$(resolve_latest_ecr_image "${_ACCOUNT_ID}" "${AWS_REGION}" "esm/osticket" || true)"
+  unset _ACCOUNT_ID
+fi
+if [[ -z "${OSTICKET_IMAGE}" ]]; then
+  echo "Warning: no ECR image found for esm/osticket; falling back to public image devinsolutions/osticket:1.17.5." >&2
+  OSTICKET_IMAGE="devinsolutions/osticket:1.17.5"
+fi
+echo "Using osTicket image: ${OSTICKET_IMAGE}"
 
 RENDER_DIR="$(mktemp -d "${TMPDIR:-/tmp}/esm-k8s-XXXXXXXX")"
 cp -R "${K8S_DIR}/." "${RENDER_DIR}/"

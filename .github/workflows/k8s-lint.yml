@@ -17,8 +17,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install kube-linter
+        run: |
+          curl -sSfL https://github.com/stackrox/kube-linter/releases/latest/download/kube-linter-linux.tar.gz \
+            | tar -xz kube-linter
+          chmod +x kube-linter
+          sudo mv kube-linter /usr/local/bin/kube-linter
+          kube-linter version
+
       - name: Run kube-linter
-        uses: stackrox/kube-linter-action@v1
-        with:
-          directory: k8s
-          config: .kube-linter.yaml
+        run: |
+          kube-linter lint k8s k8s-rendered \
+            --config .kube-linter.yaml \
+            --ignore-paths k8s/kustomization.yaml \
+            --ignore-paths k8s/README.md \
+            --ignore-paths k8s/secrets.yaml \
+            --ignore-paths k8s-rendered/kustomization.yaml \
+            --ignore-paths k8s-rendered/README.md

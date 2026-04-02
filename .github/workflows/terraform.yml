@@ -1,36 +1,32 @@
-name: ArgoCD Deploy (No Terraform Apply)
+name: Terraform CI
 
 on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
   push:
     branches: [main]
     paths:
-      - "k8s-rendered/**"
-      - "argocd/**"
-      - ".github/workflows/**"
-  workflow_dispatch:
+      - "terraform/**"
 
 env:
-  TF_VERSION: "1.7.5"
+  TF_VERSION: "1.14.8"
   WORKING_DIR: "./terraform"
   AWS_REGION: ${{ vars.AWS_REGION != '' && vars.AWS_REGION || 'ap-southeast-1' }}
 
 jobs:
-  argocd_apply:
-    name: Apply ArgoCD Application
+  plan:
+    name: Terraform Plan
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Ensure rendered manifests exist
-        run: |
-          if [ ! -d "k8s-rendered" ]; then
-            echo "k8s-rendered directory is missing. Commit rendered manifests before ArgoCD deploy."
-            exit 1
-          fi
 
       - name: Select AWS auth mode
         id: aws_auth
@@ -64,70 +60,116 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform (read outputs only)
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: true
+
+      - name: Terraform fmt
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          set -o pipefail
+          terraform plan -lock=false -input=false \
+            -var="odoo_db_password=placeholder" \
+            -var="moodle_db_password=placeholder" \
+            -var="osticket_db_password=placeholder" \
+            -var="osticket_install_secret=placeholder" \
+            -var="osticket_admin_password=placeholder" \
+            -no-color 2>&1 | tee /tmp/tfplan.txt
+
+      - name: Comment Plan on PR
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.existsSync('/tmp/tfplan.txt')
+              ? fs.readFileSync('/tmp/tfplan.txt', 'utf8').slice(0, 60000)
+              : '(plan output unavailable — the plan step failed before producing output)';
+            const status = '${{ steps.plan.outcome }}' === 'success' ? '✅' : '❌';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `### ${status} Terraform Plan\n\`\`\`\n${plan}\n\`\`\``
+            });
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  apply:
+    name: Terraform Apply
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select AWS auth mode
+        id: aws_auth
+        shell: bash
+        env:
+          AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -n "${AWS_ROLE_TO_ASSUME}" ]; then
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+          elif [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then
+            echo "mode=keys" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No AWS auth configured. Set AWS_ROLE_TO_ASSUME or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY secrets."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ steps.aws_auth.outputs.mode == 'oidc' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (Access Keys Fallback)
+        if: ${{ steps.aws_auth.outputs.mode == 'keys' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: latest
-
-      - name: Terraform Init (for outputs)
+      - name: Terraform Init
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform init -input=false
 
-      - name: Update kubeconfig from Terraform output
+      - name: Terraform Apply
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          CLUSTER_NAME="$(terraform output -raw eks_cluster_name)"
-          REGION="$(terraform output -raw aws_region)"
-          aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}"
-
-      - name: Ensure GitHub role has EKS access entry
-        if: ${{ steps.aws_auth.outputs.mode == 'oidc' }}
-        working-directory: ${{ env.WORKING_DIR }}
-        env:
-          GITHUB_ROLE_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-        run: |
-          CLUSTER_NAME="$(terraform output -raw eks_cluster_name)"
-          REGION="$(terraform output -raw aws_region)"
-          POLICY_ARN="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-
-          if ! aws eks describe-access-entry --region "${REGION}" --cluster-name "${CLUSTER_NAME}" --principal-arn "${GITHUB_ROLE_ARN}" >/dev/null 2>&1; then
-            aws eks create-access-entry \
-              --region "${REGION}" \
-              --cluster-name "${CLUSTER_NAME}" \
-              --principal-arn "${GITHUB_ROLE_ARN}" \
-              --type STANDARD
-          fi
-
-          aws eks associate-access-policy \
-            --region "${REGION}" \
-            --cluster-name "${CLUSTER_NAME}" \
-            --principal-arn "${GITHUB_ROLE_ARN}" \
-            --policy-arn "${POLICY_ARN}" \
-            --access-scope type=cluster >/dev/null 2>&1 || true
-
-          # Give EKS auth a short moment to propagate.
-          sleep 15
-
-      - name: Verify Kubernetes API access
-        run: |
-          kubectl get ns >/dev/null
-
-      - name: Install/Upgrade ArgoCD (idempotent)
-        run: |
-          kubectl get namespace argocd >/dev/null 2>&1 || kubectl create namespace argocd
-          if kubectl get deployment argocd-server -n argocd >/dev/null 2>&1; then
-            echo "ArgoCD is already installed; skipping install manifest."
-          else
-            kubectl apply --validate=false -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-          fi
-
-      - name: Apply ArgoCD Application
-        run: kubectl apply --validate=false -f argocd/application.yaml
-
-      - name: Verify ArgoCD Application exists
-        run: kubectl get applications.argoproj.io -n argocd
+          terraform apply -auto-approve -input=false \
+            -var="odoo_db_password=${{ secrets.ODOO_DB_PASSWORD }}" \
+            -var="moodle_db_password=${{ secrets.MOODLE_DB_PASSWORD }}" \
+            -var="osticket_db_password=${{ secrets.OSTICKET_DB_PASSWORD }}" \
+            -var="osticket_install_secret=${{ secrets.OSTICKET_INSTALL_SECRET }}" \
+            -var="osticket_admin_password=${{ secrets.OSTICKET_ADMIN_PASSWORD }}"

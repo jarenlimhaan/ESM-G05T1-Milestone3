@@ -1,0 +1,130 @@
+name: Security And Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform/**"
+      - "k8s/**"
+      - "scripts/**"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  checkov:
+    name: Checkov Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Checkov (Terraform + Kubernetes)
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: terraform,kubernetes
+          quiet: true
+          soft_fail: true
+
+  snyk_iac:
+    name: Snyk IaC Scan
+    runs-on: ubuntu-latest
+    needs: checkov
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Snyk IaC (Terraform)
+        uses: snyk/actions/iac@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high terraform
+
+      - name: Run Snyk IaC (Kubernetes)
+        uses: snyk/actions/iac@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high k8s
+
+  deploy:
+    name: Deploy (Scripted)
+    runs-on: ubuntu-latest
+    needs: snyk_iac
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION != '' && vars.AWS_REGION || 'ap-southeast-1' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select AWS auth mode
+        id: aws_auth
+        shell: bash
+        env:
+          AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -n "${AWS_ROLE_TO_ASSUME}" ]; then
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+          elif [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then
+            echo "mode=keys" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No AWS auth configured. Set AWS_ROLE_TO_ASSUME or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY secrets."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ steps.aws_auth.outputs.mode == 'oidc' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (Access Keys Fallback)
+        if: ${{ steps.aws_auth.outputs.mode == 'keys' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "latest"
+
+      - name: Ensure script execute bit
+        run: chmod +x scripts/*.sh
+
+      - name: Deploy or rebuild
+        shell: bash
+        run: |
+          REGION="${AWS_REGION:-ap-southeast-1}"
+          ./scripts/deploy-or-rebuild.sh --skip-image-push --aws-region "${REGION}"
+
+      - name: Sync K8s secrets from AWS Secrets Manager
+        shell: bash
+        run: |
+          REGION="${AWS_REGION:-ap-southeast-1}"
+          ./scripts/sync-k8s-secrets-from-aws.sh \
+            --region "${REGION}" \
+            --odoo-secret-id "esm/prod/odoo-db-password" \
+            --moodle-secret-id "esm/prod/moodle-db-password" \
+            --osticket-secret-id "esm/prod/osticket-db-password" \
+            --moodle-admin-password "${{ secrets.MOODLE_ADMIN_PASSWORD }}" \
+            --osticket-install-secret "${{ secrets.OSTICKET_INSTALL_SECRET }}" \
+            --osticket-admin-password "${{ secrets.OSTICKET_ADMIN_PASSWORD }}"

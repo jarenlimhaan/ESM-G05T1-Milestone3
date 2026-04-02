@@ -136,12 +136,11 @@ resource "aws_ec2_client_vpn_endpoint" "main" {
     root_certificate_chain_arn = local.use_imported_cert ? var.server_certificate_arn : aws_acm_certificate.server[0].arn
   }
 
-  # Connection logging (optional - use CloudWatch Logs for audit)
+  # Connection logging — CloudWatch Logs audit trail of all VPN connections
   connection_log_options {
-    enabled = false # Disable for this demo
-    # enabled = true
-    # cloudwatch_log_group = aws_cloudwatch_log_group.vpn.name
-    # cloudwatch_log_stream = "vpn-connection-stream"
+    enabled               = true
+    cloudwatch_log_group  = aws_cloudwatch_log_group.vpn.name
+    cloudwatch_log_stream = aws_cloudwatch_log_stream.vpn.name
   }
 
   # DNS configuration
@@ -170,10 +169,11 @@ resource "aws_ec2_client_vpn_endpoint" "main" {
     }
   )
 
-  # Wait for certificate to be validated
   depends_on = [
     aws_acm_certificate.server,
-    aws_acm_certificate.client
+    aws_acm_certificate.client,
+    aws_cloudwatch_log_group.vpn,
+    aws_cloudwatch_log_stream.vpn,
   ]
 }
 
@@ -270,7 +270,6 @@ resource "aws_cloudwatch_metric_alarm" "vpn_status" {
 # ==============================================================================
 # Enable for audit and compliance
 
-/*
 resource "aws_cloudwatch_log_group" "vpn" {
   name              = "/aws/vpn/${var.project_name}-${var.environment}"
   retention_in_days = 30
@@ -282,4 +281,3 @@ resource "aws_cloudwatch_log_stream" "vpn" {
   name           = "vpn-connection-stream"
   log_group_name = aws_cloudwatch_log_group.vpn.name
 }
-*/

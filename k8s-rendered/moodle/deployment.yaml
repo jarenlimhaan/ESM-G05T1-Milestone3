@@ -4,7 +4,7 @@ metadata:
   name: moodle
   namespace: moodle-private
 spec:
-  replicas: 1
+  replicas: 3
   strategy:
     type: Recreate
   selector:
@@ -25,7 +25,7 @@ spec:
             - name: MOODLE_DB_TYPE
               value: mariadb
             - name: MOODLE_DB_HOST
-              value: "esm-enterprise-prod-moodle.cn82a6ooiios.ap-southeast-1.rds.amazonaws.com"
+              value: "esm-enterprise-prod-moodle.c9asmcmsm7pz.ap-southeast-1.rds.amazonaws.com"
             - name: MOODLE_DB_PORT
               value: "3306"
             - name: MOODLE_DB_USER
@@ -40,7 +40,10 @@ spec:
             - name: MOODLE_ADMIN
               value: "admin"
             - name: MOODLE_ADMIN_PASSWORD
-              value: "Admin~1234"
+              valueFrom:
+                secretKeyRef:
+                  name: moodle-db
+                  key: admin_password
             - name: MOODLE_ADMIN_EMAIL
               value: "admin@esmos.meals.sg"
             - name: MOODLE_URL
