@@ -8,7 +8,7 @@ spec:
 
   source:
     repoURL: https://github.com/jarenlimhaan/ESM-G05T1-Milestone3
-    targetRevision: fix/secrets   # TODO: revert to main after PR #3 is merged
+    targetRevision: main 
     path: k8s-rendered        # rendered folder with no placeholders
 
   destination:
