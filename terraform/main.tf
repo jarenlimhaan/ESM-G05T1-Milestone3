@@ -46,6 +46,39 @@ resource "aws_secretsmanager_secret_version" "osticket_db_password" {
   secret_string = var.osticket_db_password
 }
 
+resource "aws_secretsmanager_secret" "moodle_admin_password" {
+  name                    = var.moodle_admin_password_secret_id
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "moodle_admin_password" {
+  secret_id     = aws_secretsmanager_secret.moodle_admin_password.id
+  secret_string = var.moodle_admin_password
+}
+
+resource "aws_secretsmanager_secret" "osticket_install_secret" {
+  name                    = var.osticket_install_secret_id
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "osticket_install_secret" {
+  secret_id     = aws_secretsmanager_secret.osticket_install_secret.id
+  secret_string = var.osticket_install_secret
+}
+
+resource "aws_secretsmanager_secret" "osticket_admin_password" {
+  name                    = var.osticket_admin_password_secret_id
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "osticket_admin_password" {
+  secret_id     = aws_secretsmanager_secret.osticket_admin_password.id
+  secret_string = var.osticket_admin_password
+}
+
 locals {
   common_tags = merge(
     {
@@ -540,7 +573,8 @@ resource "kubernetes_secret" "moodle_db" {
     namespace = kubernetes_namespace.moodle_private.metadata[0].name
   }
   data = {
-    password = aws_secretsmanager_secret_version.moodle_db_password.secret_string
+    password       = aws_secretsmanager_secret_version.moodle_db_password.secret_string
+    admin_password = var.moodle_admin_password
   }
 }
 

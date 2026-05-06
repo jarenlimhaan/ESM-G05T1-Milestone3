@@ -190,6 +190,19 @@ variable "moodle_db_password_secret_id" {
   default     = "esm/prod/moodle-db-password"
 }
 
+variable "moodle_admin_password" {
+  description = "Moodle admin user password"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "moodle_admin_password_secret_id" {
+  description = "AWS Secrets Manager secret ID containing Moodle admin password"
+  type        = string
+  default     = "esm/prod/moodle-admin-password"
+}
+
 variable "osticket_db_password" {
   description = "Password for osTicket MySQL database (shared MySQL instance)"
   type        = string
@@ -210,11 +223,23 @@ variable "osticket_install_secret" {
   default     = null
 }
 
+variable "osticket_install_secret_id" {
+  description = "AWS Secrets Manager secret ID containing osTicket install secret"
+  type        = string
+  default     = "esm/prod/osticket-install-secret"
+}
+
 variable "osticket_admin_password" {
   description = "osTicket admin user password"
   type        = string
   sensitive   = true
   default     = null
+}
+
+variable "osticket_admin_password_secret_id" {
+  description = "AWS Secrets Manager secret ID containing osTicket admin password"
+  type        = string
+  default     = "esm/prod/osticket-admin-password"
 }
 
 variable "db_instance_class" {
