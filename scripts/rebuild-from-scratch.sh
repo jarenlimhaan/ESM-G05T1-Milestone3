@@ -61,7 +61,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "${SKIP_DESTROY}" != "true" ]]; then
-  "${SCRIPT_DIR}/destroy-everything.sh"
+  if [[ -x "${SCRIPT_DIR}/destroy-landing-zones.sh" ]]; then
+    "${SCRIPT_DIR}/destroy-landing-zones.sh" --terraform-root "${REPO_ROOT}/terraform"
+  else
+    "${SCRIPT_DIR}/destroy-everything.sh"
+  fi
 fi
 
 if ! command -v docker >/dev/null 2>&1; then

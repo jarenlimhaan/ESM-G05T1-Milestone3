@@ -66,7 +66,7 @@ kubectl get pods -n osticket-private
 ### 3.2 Endpoints output
 
 ```bash
-terraform -chdir=terraform output application_access_urls
+terraform -chdir=terraform/lz2-orchestration output application_access_urls
 ```
 
 ### 3.3 VPN for internal apps
@@ -80,7 +80,7 @@ Import profile into AWS VPN Client and connect.
 ### 3.4 Connectivity checks
 
 ```bash
-curl -I "http://$(terraform -chdir=terraform output -raw public_alb_dns_name)/"
+curl -I "http://$(terraform -chdir=terraform/lz2-orchestration output -raw public_alb_dns_name)/"
 ```
 
 Internal examples (after VPN connect):

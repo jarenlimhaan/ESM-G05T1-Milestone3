@@ -11,7 +11,7 @@ Usage:
     [--odoo-secret-id "<aws-secretsmanager-id>"] \
     [--moodle-secret-id "<aws-secretsmanager-id>"] \
     [--osticket-secret-id "<aws-secretsmanager-id>"] \
-    [--terraform-dir terraform] \
+    [--terraform-dir terraform/lz2-orchestration] \
     [--aws-region ap-southeast-1] \
     [--odoo-db-user odoo_admin] \
     [--odoo-image "<image-ref>"] \
@@ -52,7 +52,7 @@ Options:
   --moodle-secret-id     AWS Secrets Manager secret id for Moodle DB password.
   --osticket-secret-id   AWS Secrets Manager secret id for osTicket DB password.
                          If omitted, Moodle secret/password is reused.
-  --terraform-dir        Terraform directory (default: terraform).
+  --terraform-dir        Terraform directory (default: terraform/lz2-orchestration).
   --aws-region           AWS region. If omitted, read from Terraform output.
   --odoo-db-user         Odoo DB user (default: odoo_admin).
   --odoo-image           Odoo container image (default: odoo:16.0).
@@ -200,7 +200,9 @@ ensure_moodle_db_is_complete() {
 
   if [[ -z "${version}" ]]; then
     # Fallback: if container logs show Moodle install completed, do not hard-fail.
-    if kubectl logs -n moodle-private deployment/moodle --tail=400 2>/dev/null | grep -q "Installation completed successfully"; then
+    local moodle_logs
+    moodle_logs="$(kubectl logs -n moodle-private deployment/moodle --tail=400 2>/dev/null || true)"
+    if grep -q "Installation completed successfully" <<<"${moodle_logs}"; then
       echo "Warning: Moodle version check was inconclusive, but installation logs indicate success. Continuing."
       return 0
     fi
@@ -256,7 +258,7 @@ read_dotenv_value() {
   fi
 }
 
-TERRAFORM_DIR="${REPO_ROOT}/terraform"
+TERRAFORM_DIR="${REPO_ROOT}/terraform/lz2-orchestration"
 K8S_DIR="${REPO_ROOT}/k8s"
 AWS_REGION=""
 ODOO_DB_USER="odoo_admin"

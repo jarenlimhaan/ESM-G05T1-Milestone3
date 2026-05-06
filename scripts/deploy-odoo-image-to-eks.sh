@@ -11,7 +11,7 @@ Usage:
     --ecr-repo-name esm/odoo17 \
     [--target-image <registry/repo:tag>] \
     [--image-tag v20260322] \
-    [--terraform-dir terraform] \
+    [--terraform-dir terraform/lz2-orchestration] \
     [--aws-region ap-southeast-1] \
     [--odoo-db-user odoo_admin] \
     [--odoo-db-password "<password>" | --odoo-secret-id "<secret-id>"] \
@@ -79,7 +79,7 @@ SOURCE_IMAGE="odoo17-custom:latest"
 ECR_REPO_NAME="esm/odoo17"
 IMAGE_TAG="$(date +%Y%m%d-%H%M%S)"
 TARGET_IMAGE=""
-TERRAFORM_DIR="${REPO_ROOT}/terraform"
+TERRAFORM_DIR="${REPO_ROOT}/terraform/lz2-orchestration"
 AWS_REGION=""
 ODOO_DB_USER="odoo_admin"
 ODOO_DB_PASSWORD=""
@@ -339,14 +339,25 @@ if [[ "${PROVISION_INFRA}" == "true" ]]; then
     exit 1
   fi
 
-  echo "Provisioning infrastructure with Terraform..."
-  terraform -chdir="${TERRAFORM_DIR}" init
-  terraform -chdir="${TERRAFORM_DIR}" apply -auto-approve \
-    -var="odoo_db_password=${ODOO_DB_PASSWORD}" \
-    -var="moodle_db_password=${MOODLE_DB_PASSWORD}" \
-    -var="osticket_db_password=${OSTICKET_DB_PASSWORD}" \
-    -var="osticket_install_secret=${OSTICKET_INSTALL_SECRET}" \
-    -var="osticket_admin_password=${OSTICKET_ADMIN_PASSWORD}"
+  echo "Provisioning infrastructure..."
+  if [[ "${TERRAFORM_DIR}" == *"/lz2-orchestration" && -x "${SCRIPT_DIR}/apply-landing-zones.sh" ]]; then
+    "${SCRIPT_DIR}/apply-landing-zones.sh" \
+      --terraform-root "${REPO_ROOT}/terraform" \
+      --aws-region "${AWS_REGION:-ap-southeast-1}" \
+      --odoo-db-password "${ODOO_DB_PASSWORD}" \
+      --moodle-db-password "${MOODLE_DB_PASSWORD}" \
+      --osticket-db-password "${OSTICKET_DB_PASSWORD}" \
+      --osticket-install-secret "${OSTICKET_INSTALL_SECRET}" \
+      --osticket-admin-password "${OSTICKET_ADMIN_PASSWORD}"
+  else
+    terraform -chdir="${TERRAFORM_DIR}" init
+    terraform -chdir="${TERRAFORM_DIR}" apply -auto-approve \
+      -var="odoo_db_password=${ODOO_DB_PASSWORD}" \
+      -var="moodle_db_password=${MOODLE_DB_PASSWORD}" \
+      -var="osticket_db_password=${OSTICKET_DB_PASSWORD}" \
+      -var="osticket_install_secret=${OSTICKET_INSTALL_SECRET}" \
+      -var="osticket_admin_password=${OSTICKET_ADMIN_PASSWORD}"
+  fi
 fi
 
 if [[ "${SKIP_DB_RESTORE}" != "true" && ! -f "${SQL_DUMP_FILE}" ]]; then

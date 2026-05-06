@@ -225,8 +225,10 @@ module "monitoring" {
   alert_email = var.alert_email
 
   # Resources to monitor
-  odoo_rds_id                             = module.rds.odoo_instance_id
-  moodle_rds_id                           = module.rds.moodle_instance_id
+  # CloudWatch RDS dimensions require DBInstanceIdentifier (e.g. esm-enterprise-prod-odoo),
+  # not DB resource ID (e.g. db-ABC123...).
+  odoo_rds_id                             = split(".", module.rds.odoo_endpoint)[0]
+  moodle_rds_id                           = split(".", module.rds.moodle_endpoint)[0]
   efs_id                                  = module.efs.efs_id
   eks_cluster_name                        = module.eks.cluster_name
   moodle_namespace                        = "moodle-private"

@@ -21,7 +21,7 @@ on:
 
 env:
   TF_VERSION: "1.7.5"
-  WORKING_DIR: "./terraform"
+  WORKING_DIR: "./terraform/lz2-orchestration"
   AWS_REGION: ${{ vars.AWS_REGION != '' && vars.AWS_REGION || 'ap-southeast-1' }}
   ODOO_UPGRADE_MODULES: "helpdesk_mgmt,helpdesk_mgmt_merge,helpdesk_mgmt_project,helpdesk_mgmt_sale,helpdesk_ticket_related,helpdesk_type"
 
@@ -121,8 +121,8 @@ jobs:
         run: |
           set -euo pipefail
           test -f data/odoo17/odoo.sql.gz
-          ODOO_DB_HOST="$(terraform -chdir=terraform output -raw odoo_rds_endpoint | cut -d: -f1)"
-          ODOO_DB_NAME="$(terraform -chdir=terraform output -raw odoo_db_name)"
+          ODOO_DB_HOST="$(terraform -chdir=${WORKING_DIR} output -raw odoo_rds_endpoint | cut -d: -f1)"
+          ODOO_DB_NAME="$(terraform -chdir=${WORKING_DIR} output -raw odoo_db_name)"
           ODOO_DB_USER="odoo_admin"
           ODOO_DB_PASSWORD="$(kubectl get secret odoo-db -n odoo-private -o jsonpath='{.data.password}' | base64 -d)"
 
@@ -204,8 +204,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ODOO_DB_NAME="$(terraform -chdir=terraform output -raw odoo_db_name)"
-          ODOO_DB_HOST="$(terraform -chdir=terraform output -raw odoo_rds_endpoint | cut -d: -f1)"
+          ODOO_DB_NAME="$(terraform -chdir=${WORKING_DIR} output -raw odoo_db_name)"
+          ODOO_DB_HOST="$(terraform -chdir=${WORKING_DIR} output -raw odoo_rds_endpoint | cut -d: -f1)"
           ODOO_DB_PORT="5432"
           ODOO_DB_USER="odoo_admin"
           ODOO_DB_PASSWORD="$(kubectl get secret odoo-db -n odoo-private -o jsonpath='{.data.password}' | base64 -d)"

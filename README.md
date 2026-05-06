@@ -13,9 +13,31 @@ This repository provisions AWS infrastructure with Terraform and deploys apps to
 
 ## Repo Layout
 
-- `terraform/` -> infrastructure provisioning
+- `terraform/lz0-storage/` -> level 0 (foundation/storage/audit)
+- `terraform/lz1-network/` -> level 1 (VPC/security/VPN)
+- `terraform/lz2-orchestration/` -> level 2 (EKS/RDS/EFS/ALB/DNS/WAF/monitoring/apps)
 - `k8s/` -> Kubernetes manifests (template placeholders)
 - `scripts/` -> deploy/teardown/VPN helper scripts
+
+## Landing Zone Apply/Destroy
+
+Apply by dependency order:
+
+```bash
+./scripts/apply-landing-zones.sh \
+  --aws-region ap-southeast-1 \
+  --odoo-db-password "..." \
+  --moodle-db-password "..." \
+  --osticket-db-password "..." \
+  --osticket-install-secret "..." \
+  --osticket-admin-password "..."
+```
+
+Destroy in reverse order:
+
+```bash
+./scripts/destroy-landing-zones.sh --aws-region ap-southeast-1
+```
 
 ## Prerequisites
 Install and configure:
@@ -100,7 +122,7 @@ Or use AWS Secrets Manager IDs:
 ### 4. Get Endpoints
 
 ```bash
-terraform -chdir=terraform output application_access_urls
+terraform -chdir=terraform/lz2-orchestration output application_access_urls
 ```
 
 ### 5. Generate VPN Profile (Internal Access)

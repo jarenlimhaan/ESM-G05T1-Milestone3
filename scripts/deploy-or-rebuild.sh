@@ -7,7 +7,7 @@ Deploy apps if infra is up; otherwise rebuild from scratch.
 
 Usage:
   ./scripts/deploy-or-rebuild.sh \
-    [--terraform-dir terraform] \
+    [--terraform-dir terraform/lz2-orchestration] \
     [--aws-region ap-southeast-1] \
     [--ecr-repo-name esm/odoo17] \
     [--allow-destroy] \
@@ -44,7 +44,7 @@ require_cmd() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-TERRAFORM_DIR="${REPO_ROOT}/terraform"
+TERRAFORM_DIR="${REPO_ROOT}/terraform/lz2-orchestration"
 AWS_REGION=""
 TARGET_IMAGE=""
 SKIP_IMAGE_PUSH="false"
