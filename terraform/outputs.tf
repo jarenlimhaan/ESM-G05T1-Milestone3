@@ -217,8 +217,18 @@ output "efs_id" {
 }
 
 output "efs_odoo_access_point_id" {
-  description = "EFS access point ID used by Odoo"
+  description = "EFS access point ID used by Odoo private instance (/odoo)"
   value       = module.efs.odoo_access_point_id
+}
+
+output "efs_odoo_public_access_point_id" {
+  description = "EFS access point ID used by Odoo public instance (/odoo-public)"
+  value       = module.efs.odoo_public_access_point_id
+}
+
+output "efs_moodle_access_point_id" {
+  description = "EFS access point ID used by Moodle (/moodle)"
+  value       = module.efs.moodle_access_point_id
 }
 
 output "efs_dns_name" {

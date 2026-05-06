@@ -29,6 +29,16 @@ output "mount_target_dns_names" {
 }
 
 output "odoo_access_point_id" {
-  description = "EFS access point ID for Odoo"
+  description = "EFS access point ID for Odoo (private instance, /odoo)"
   value       = aws_efs_access_point.odoo.id
+}
+
+output "odoo_public_access_point_id" {
+  description = "EFS access point ID for Odoo public instance (/odoo-public)"
+  value       = aws_efs_access_point.odoo_public.id
+}
+
+output "moodle_access_point_id" {
+  description = "EFS access point ID for Moodle (/moodle, uid=33 www-data)"
+  value       = aws_efs_access_point.moodle.id
 }
