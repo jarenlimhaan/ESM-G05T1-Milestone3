@@ -1,0 +1,124 @@
+# ==============================================================================
+# Moodle Helm Chart — Default Values
+# ==============================================================================
+# This file contains defaults only. All environment-specific values (RDS
+# endpoints, EFS IDs, IRSA ARNs, ECR URIs, secret names, Moodle site URL)
+# MUST be supplied via environments/prod/moodle.yaml.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Image
+# ellakcy/moodle is the community image used in the existing deployment.
+# ------------------------------------------------------------------------------
+image:
+  repository: "ellakcy/moodle"
+  tag: ""                 # Pin to a specific digest in environments/prod/moodle.yaml
+  pullPolicy: IfNotPresent
+
+# ------------------------------------------------------------------------------
+# Replica count — HPA minReplicas overrides at runtime
+# ------------------------------------------------------------------------------
+replicaCount: 3
+
+# ------------------------------------------------------------------------------
+# Kubernetes Service (NodePort — consumed by the ALB target group)
+# ------------------------------------------------------------------------------
+service:
+  nodePort: 30082
+
+# ------------------------------------------------------------------------------
+# Database (MariaDB via RDS)
+# ------------------------------------------------------------------------------
+db:
+  host: ""                # RDS endpoint, e.g. esm-prod-moodle.xxxx.ap-southeast-1.rds.amazonaws.com
+  port: 3306
+  name: ""                # RDS database name
+  user: ""                # RDS master username
+
+# ------------------------------------------------------------------------------
+# EFS Persistent Volume
+# Moodle stores uploaded files, course data, and session caches under
+# /var/moodledata (or equivalent). emptyDir in the existing deployment is a
+# bug — this chart fixes it with a static EFS access point.
+# uid=33 (www-data) is set on the EFS access point to match the Moodle container.
+# ------------------------------------------------------------------------------
+persistence:
+  enabled: true
+  storageClassName: "efs-static-moodle"
+  efsId: ""               # EFS file system ID, e.g. fs-0123456789abcdef0
+  accessPointId: ""       # EFS access point ID for /moodle (uid=33, www-data)
+
+# ------------------------------------------------------------------------------
+# Moodle application settings
+# These are injected as environment variables into the container.
+# adminEmail and adminUser are NOT secrets; they are configuration values
+# safe to commit in the environments/prod overlay.
+# adminPassword is a secret — managed via ASCP (secrets.adminPasswordSecretId).
+# ------------------------------------------------------------------------------
+moodle:
+  url: ""                 # Full URL, e.g. https://esm-internal.example.com/moodle
+  adminUser: ""           # Moodle admin username
+  adminEmail: ""          # Moodle admin e-mail address
+
+# ------------------------------------------------------------------------------
+# Probes
+# Moodle starts slowly; TCP probes are used (no reliable HTTP health endpoint
+# available at startup). initialDelaySeconds gives the container time to
+# initialise PHP-FPM and the database schema before traffic is sent.
+# ------------------------------------------------------------------------------
+probes:
+  readinessInitialDelay: 120    # seconds before first readiness check
+  livenessInitialDelay: 360     # seconds before first liveness check
+  periodSeconds: 10
+  failureThreshold: 3
+
+# ------------------------------------------------------------------------------
+# Horizontal Pod Autoscaler
+# Moodle's CPU threshold is 60% (lower than Odoo/osTicket) because PHP-FPM
+# processes are more sensitive to CPU saturation under concurrent users.
+# minReplicas=2 ensures one pod can restart while the other absorbs traffic.
+# ------------------------------------------------------------------------------
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  cpuUtilization: 60      # 60% — matches existing hpa.yaml (lower than Odoo's 70%)
+  memoryUtilization: 80
+
+# ------------------------------------------------------------------------------
+# Resource requests and limits
+# ------------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+# ------------------------------------------------------------------------------
+# Ingress
+# groupOrder=20 places Moodle listener rules after Odoo (10) and before
+# osTicket (30) within the esm-internal ALB IngressGroup.
+# ------------------------------------------------------------------------------
+ingress:
+  groupOrder: "20"
+
+# ------------------------------------------------------------------------------
+# ServiceAccount + IRSA
+# Annotated with the IAM role ARN that grants GetSecretValue on the Moodle
+# secrets in AWS Secrets Manager.
+# ------------------------------------------------------------------------------
+serviceAccount:
+  irsaRoleArn: ""         # IAM role ARN, e.g. arn:aws:iam::123456789012:role/esm-prod-moodle-role
+
+# ------------------------------------------------------------------------------
+# Secrets Store CSI Driver / ASCP
+# dbPasswordSecretId and adminPasswordSecretId are the Secrets Manager secret
+# names (not ARNs). ASCP fetches them and syncs to K8s Secret "moodle-db"
+# with keys "password" and "admin_password", consumed by the deployment via
+# secretKeyRef.
+# ------------------------------------------------------------------------------
+secrets:
+  dbPasswordSecretId: ""          # SM secret name for MariaDB password
+  adminPasswordSecretId: ""       # SM secret name for Moodle admin password

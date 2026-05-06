@@ -1,0 +1,95 @@
+# ==============================================================================
+# osTicket Helm Chart — Default Values
+# ==============================================================================
+# This file contains defaults only. All environment-specific values (RDS
+# endpoints, IRSA ARNs, ECR URIs, secret names) MUST be supplied via
+# environments/prod/osticket.yaml.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Image
+# osTicket uses a custom ECR image built from the local Dockerfile.
+# ------------------------------------------------------------------------------
+image:
+  repository: ""          # ECR URI, e.g. 123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket
+  tag: ""                 # Image tag, e.g. latest or a specific digest
+  pullPolicy: IfNotPresent
+
+# ------------------------------------------------------------------------------
+# Replica count — HPA minReplicas overrides at runtime
+# ------------------------------------------------------------------------------
+replicaCount: 3
+
+# ------------------------------------------------------------------------------
+# Kubernetes Service (NodePort — consumed by the ALB target group)
+# ------------------------------------------------------------------------------
+service:
+  nodePort: 30083
+
+# ------------------------------------------------------------------------------
+# Database (MySQL-compatible via RDS MariaDB)
+# ------------------------------------------------------------------------------
+db:
+  host: ""                # RDS endpoint, e.g. esm-prod-osticket.xxxx.ap-southeast-1.rds.amazonaws.com
+  port: 3306
+  name: ""                # RDS database name
+  user: ""                # RDS master username
+
+# ------------------------------------------------------------------------------
+# Probes
+# osTicket starts faster than Moodle; TCP probes with shorter delays.
+# ------------------------------------------------------------------------------
+probes:
+  readinessInitialDelay: 30     # seconds before first readiness check
+  livenessInitialDelay: 90      # seconds before first liveness check
+  periodSeconds: 10
+  failureThreshold: 3
+
+# ------------------------------------------------------------------------------
+# Horizontal Pod Autoscaler
+# minReplicas=2 ensures one pod can restart while the other absorbs traffic.
+# ------------------------------------------------------------------------------
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  cpuUtilization: 70
+  memoryUtilization: 80
+
+# ------------------------------------------------------------------------------
+# Resource requests and limits
+# ------------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# ------------------------------------------------------------------------------
+# Ingress
+# groupOrder=30 places osTicket listener rules last within the esm-internal
+# ALB IngressGroup (after Odoo=10, Moodle=20).
+# ------------------------------------------------------------------------------
+ingress:
+  groupOrder: "30"
+
+# ------------------------------------------------------------------------------
+# ServiceAccount + IRSA
+# Annotated with the IAM role ARN that grants GetSecretValue on the osTicket
+# secrets in AWS Secrets Manager.
+# ------------------------------------------------------------------------------
+serviceAccount:
+  irsaRoleArn: ""         # IAM role ARN, e.g. arn:aws:iam::123456789012:role/esm-prod-osticket-role
+
+# ------------------------------------------------------------------------------
+# Secrets Store CSI Driver / ASCP
+# Three secrets are fetched from Secrets Manager and synced to K8s Secret
+# "osticket-db" with keys "password", "install_secret", "admin_password".
+# All three are consumed by the deployment via secretKeyRef.
+# ------------------------------------------------------------------------------
+secrets:
+  dbPasswordSecretId: ""          # SM secret name for MySQL password
+  installSecretId: ""             # SM secret name for osTicket install secret (OSTI_SECRET)
+  adminPasswordSecretId: ""       # SM secret name for osTicket admin password
