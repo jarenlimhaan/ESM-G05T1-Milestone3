@@ -1,0 +1,67 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-autoscaler
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"   # Deploy before application workloads
+spec:
+  project: default
+
+  source:
+    repoURL: https://kubernetes.github.io/autoscaler
+    chart: cluster-autoscaler
+    # Pin to a specific chart version for reproducibility.
+    # The chart version must be compatible with your EKS Kubernetes version.
+    # Check https://artifacthub.io/packages/helm/cluster-autoscaler/cluster-autoscaler for latest.
+    targetRevision: "9.43.0"
+    helm:
+      values: |
+        cloudProvider: aws
+        awsRegion: ap-southeast-1
+
+        # Auto-discovery finds the node groups by EKS cluster name tag.
+        # Set to the exact EKS cluster name output from Terraform (terraform output cluster_name).
+        autoDiscovery:
+          clusterName: ""     # TODO: fill in from `terraform output cluster_name` (Batch 2)
+
+        rbac:
+          create: true
+          serviceAccount:
+            create: true
+            name: cluster-autoscaler
+            annotations:
+              # IRSA role ARN created in Terraform (Batch 2).
+              # Fill in from `terraform output cluster_autoscaler_role_arn`.
+              eks.amazonaws.com/role-arn: ""   # TODO: fill in from Terraform output (Batch 2)
+
+        # Scale-down behaviour: wait 10 minutes of under-utilisation before removing a node.
+        extraArgs:
+          scale-down-delay-after-add: 10m
+          scale-down-unneeded-time: 10m
+          skip-nodes-with-local-storage: "false"
+          expander: least-waste
+
+        # Two replicas with leader election so one can restart without losing autoscaling.
+        replicaCount: 2
+        podDisruptionBudget:
+          maxUnavailable: 1
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false   # kube-system always exists; skip creation attempt
+
+  # The cluster-autoscaler Deployment manages its own replica count via leader
+  # election; ignore drift on the replicas field so ArgoCD does not fight it.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

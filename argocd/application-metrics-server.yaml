@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  namespace: argocd
+  # Ensure this Application is not pruned when the old monolithic application.yaml
+  # is eventually removed. System components are long-lived and managed independently.
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"   # Deploy before application workloads
+spec:
+  project: default
+
+  source:
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    chart: metrics-server
+    # Pin to a specific chart version for reproducibility.
+    # Check https://artifacthub.io/packages/helm/metrics-server/metrics-server for latest.
+    targetRevision: "3.12.1"
+    helm:
+      values: |
+        # EKS nodes expose the kubelet on hostnames that do not always match the
+        # TLS certificate SANs, so we skip TLS verification on the kubelet scrape.
+        args:
+          - --kubelet-insecure-tls
+        # metrics-server needs to reach every node; use host network on the pod
+        # so it can resolve internal node hostnames correctly on EKS.
+        hostNetwork:
+          enabled: false      # set to true only if DNS resolution of node names fails
+        # Two replicas so a restart of one does not cause a gap in HPA metrics.
+        replicas: 2
+        podDisruptionBudget:
+          enabled: true
+          minAvailable: 1
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false   # kube-system always exists; skip creation attempt
