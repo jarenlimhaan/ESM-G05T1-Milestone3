@@ -35,6 +35,13 @@ db:
   name: ""                # RDS database name
   user: ""                # RDS master username
 
+
+persistence:
+  enabled: true
+  storageClassName: "efs-static-osticket"
+  efsId: ""               # EFS file system ID
+  accessPointId: ""       # EFS access point ID for /osticket
+
 # ------------------------------------------------------------------------------
 # Probes
 # osTicket starts faster than Moodle; TCP probes with shorter delays.

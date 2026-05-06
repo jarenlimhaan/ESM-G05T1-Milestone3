@@ -51,12 +51,14 @@ db:
 
 # ------------------------------------------------------------------------------
 # EFS Persistent Volume
-# storageClassName must match between PV and PVC; no StorageClass object required
-# for static EFS provisioning (volumeName is explicit).
-# Use efs-static-odoo-private for the private release, efs-static-odoo-public
-# for the public release to prevent cross-mount between the two instances.
+# storageClassName must match between PV and PVC; no StorageClass object is
+# required for static EFS provisioning (volumeName is explicit).
+# Use efs-static-odoo-private for the private release and override to
+# efs-static-odoo-public in environments/prod/odoo-public.yaml to prevent
+# cross-mount between the two instances.
 # ------------------------------------------------------------------------------
-storage:
+persistence:
+  enabled: true
   storageClassName: "efs-static-odoo-private"  # Override to "efs-static-odoo-public" for public release
   efsId: ""               # EFS file system ID, e.g. fs-0123456789abcdef0
   accessPointId: ""       # EFS access point ID — private: ap-xxx (/odoo), public: ap-yyy (/odoo-public)
