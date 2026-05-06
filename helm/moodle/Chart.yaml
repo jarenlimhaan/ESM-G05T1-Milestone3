@@ -1,0 +1,5 @@
+apiVersion: v2
+name: moodle
+version: 0.1.0
+appVersion: "1.0"
+description: Moodle LMS deployment for the ESM Enterprise platform
