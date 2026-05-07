@@ -1,0 +1,104 @@
+# ==============================================================================
+# argocd-apps — Production Overrides
+# ==============================================================================
+# This file overrides helm/argocd-apps/values.yaml with prod-specific values.
+# It is merged by the bootstrap ArgoCD Application via valueFiles.
+#
+# Values that belong here:
+#   - GitHub repo URL and target branch
+#   - Kubernetes API server address
+#   - cluster-autoscaler cluster name + IRSA role ARN (from terraform output)
+#   - workloadApps list (Batch 4 — populated after terraform apply)
+# ==============================================================================
+
+# Destination cluster for all Applications managed by this chart
+destinationServer: https://kubernetes.default.svc
+
+# This repo — all workload apps source their charts from here
+repoURL: https://github.com/jarenlimhaan/ESM-G05T1-Milestone3
+
+# Active branch. Change to main at Batch 5 ArgoCD cutover.
+targetRevision: feature/helm-charts
+
+# ------------------------------------------------------------------------------
+# System app overrides
+# Only the fields that differ from the chart defaults need to be listed here.
+# Using helm mergeOverwrite, a nested key under a named list entry requires
+# the full entry to be re-declared. Override the two cluster-autoscaler TODOs
+# once `terraform apply` has run.
+# ------------------------------------------------------------------------------
+systemApps:
+  - name: metrics-server
+    namespace: kube-system
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    chart: metrics-server
+    targetRevision: "3.12.1"
+    syncWave: "-2"
+    helmValues: |
+      args:
+        - --kubelet-insecure-tls
+      replicas: 2
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+
+  - name: cluster-autoscaler
+    namespace: kube-system
+    repoURL: https://kubernetes.github.io/autoscaler
+    chart: cluster-autoscaler
+    targetRevision: "9.43.0"
+    syncWave: "-2"
+    helmValues: |
+      cloudProvider: aws
+      awsRegion: ap-southeast-1
+      autoDiscovery:
+        clusterName: ""   # TODO: fill in from `terraform output eks_cluster_name` after apply
+      rbac:
+        create: true
+        serviceAccount:
+          create: true
+          name: cluster-autoscaler
+          annotations:
+            eks.amazonaws.com/role-arn: ""   # TODO: fill in from `terraform output eks_cluster_autoscaler_role_arn` after apply
+      extraArgs:
+        scale-down-delay-after-add: 10m
+        scale-down-unneeded-time: 10m
+        skip-nodes-with-local-storage: "false"
+        expander: least-waste
+      replicaCount: 2
+      podDisruptionBudget:
+        maxUnavailable: 1
+    ignoreDiffs:
+      - group: apps
+        kind: Deployment
+        jsonPointers:
+          - /spec/replicas
+
+  - name: secrets-store-csi-driver
+    namespace: kube-system
+    repoURL: https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts
+    chart: secrets-store-csi-driver
+    targetRevision: "1.4.4"
+    syncWave: "-1"
+    helmValues: |
+      syncSecret:
+        enabled: true
+      enableSecretRotation: true
+      rotationPollInterval: 2m
+
+  - name: secrets-store-csi-driver-provider-aws
+    namespace: kube-system
+    repoURL: https://aws.github.io/secrets-store-csi-driver-provider-aws
+    chart: secrets-store-csi-driver-provider-aws
+    targetRevision: "0.3.9"
+    syncWave: "-1"
+
+# ------------------------------------------------------------------------------
+# Workload Applications — Batch 4
+# Populated after `terraform apply` produces:
+#   - RDS endpoints       (terraform output odoo_rds_endpoint etc.)
+#   - EFS access point IDs (terraform output efs_odoo_access_point_id etc.)
+#   - IRSA role ARNs      (terraform output odoo_private_irsa_role_arn etc.)
+#   - Secret name IDs     (terraform output odoo_db_password_secret_id etc.)
+# ------------------------------------------------------------------------------
+workloadApps: []
