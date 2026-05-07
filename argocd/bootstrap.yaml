@@ -1,0 +1,34 @@
+# Apply this file once to bootstrap the App of Apps:
+#   kubectl apply -f argocd/bootstrap.yaml
+#
+# After this single apply, ArgoCD self-manages all child Applications from Git.
+# To update any app configuration, commit changes to Git — not kubectl.
+#
+# Change targetRevision from feature/helm-charts to main at production cutover.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-apps
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/jarenlimhaan/ESM-G05T1-Milestone3
+    targetRevision: feature/helm-charts   # change to main at Batch 5 cutover
+    path: helm/argocd-apps
+    helm:
+      valueFiles:
+        - values.yaml
+        - ../../environments/prod/argocd-apps.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false   # argocd namespace already exists

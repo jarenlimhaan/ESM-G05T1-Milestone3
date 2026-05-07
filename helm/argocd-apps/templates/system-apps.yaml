@@ -1,0 +1,43 @@
+{{- range .Values.systemApps }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .name }}
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .syncWave | quote }}
+spec:
+  project: default
+
+  source:
+    repoURL: {{ .repoURL }}
+    chart: {{ .chart }}
+    targetRevision: {{ .targetRevision | quote }}
+    {{- if .helmValues }}
+    helm:
+      values: |
+{{ .helmValues | indent 8 }}
+    {{- end }}
+  destination:
+    server: {{ $.Values.destinationServer }}
+    namespace: {{ .namespace }}
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+  {{- if .ignoreDiffs }}
+  ignoreDifferences:
+    {{- range .ignoreDiffs }}
+    - group: {{ .group }}
+      kind: {{ .kind }}
+      jsonPointers:
+        {{- range .jsonPointers }}
+        - {{ . }}
+        {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}

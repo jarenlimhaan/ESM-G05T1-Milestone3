@@ -1,0 +1,34 @@
+{{- range .Values.workloadApps }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .name }}
+  namespace: argocd
+  {{- if .syncWave }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .syncWave | quote }}
+  {{- end }}
+spec:
+  project: default
+
+  source:
+    repoURL: {{ $.Values.repoURL }}
+    targetRevision: {{ $.Values.targetRevision | quote }}
+    path: {{ .path }}
+    helm:
+      valueFiles:
+        - values.yaml
+        - {{ .valuesFile }}
+
+  destination:
+    server: {{ $.Values.destinationServer }}
+    namespace: {{ .namespace }}
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}
