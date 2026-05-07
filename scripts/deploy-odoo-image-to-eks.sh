@@ -37,7 +37,8 @@ Usage:
     [--provision-infra]
 
 Notes:
-  - This script reuses ./scripts/deploy-k8s-apps.sh for base manifest deployment.
+  - Kubernetes deployment is handled by ArgoCD (bootstrap.yaml). Run this script
+    after ArgoCD has synced and namespaces/PVCs are created.
   - DB restore is destructive for the target Odoo DB.
   - osTicket DB restore is destructive for the target osTicket DB.
   - Filestore sync copies local filestore into EFS-backed PVC (odoo-private/odoo-pvc).
@@ -127,6 +128,7 @@ FILESTORE_DIR="${REPO_ROOT}/filestore/odoo"
 MODULE_UPGRADE_LIST="helpdesk_mgmt,helpdesk_mgmt_merge,helpdesk_mgmt_project,helpdesk_mgmt_sale,helpdesk_ticket_related,helpdesk_type"
 
 SKIP_IMAGE_PUSH="false"
+SKIP_DEPLOY="false"
 SKIP_DB_RESTORE="false"
 SKIP_OSTICKET_DB_RESTORE="false"
 SKIP_MOODLE_DB_RESTORE="false"
@@ -254,6 +256,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-image-push)
       SKIP_IMAGE_PUSH="true"
+      shift
+      ;;
+    --skip-deploy)
+      SKIP_DEPLOY="true"
       shift
       ;;
     --skip-db-restore)
