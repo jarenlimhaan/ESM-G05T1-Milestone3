@@ -100,3 +100,19 @@ secrets:
   dbPasswordSecretId: ""          # SM secret name for MySQL password
   installSecretId: ""             # SM secret name for osTicket install secret (OSTI_SECRET)
   adminPasswordSecretId: ""       # SM secret name for osTicket admin password
+
+# ------------------------------------------------------------------------------
+# osTicket application configuration
+# These are injected as environment variables into the container.
+# Non-secret values safe to commit in the environments/prod overlay.
+# Secrets (INSTALL_SECRET, MYSQL_PASSWORD, ADMIN_PASSWORD) are managed via ASCP.
+# ------------------------------------------------------------------------------
+osticket:
+  installName: ""       # Helpdesk name shown in the UI, e.g. "ESM Enterprise Support"
+  installUrl: ""        # Full URL of the osTicket install, e.g. https://esm-internal.example.com/osticket
+  installEmail: ""      # Default reply-to e-mail address for outgoing notifications
+  adminFirstname: ""    # Admin account first name
+  adminLastname: ""     # Admin account last name
+  adminEmail: ""        # Admin account e-mail address
+  adminUsername: ""     # Admin account username
+  cronInterval: "5"     # Cron task run interval in minutes
