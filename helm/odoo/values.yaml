@@ -26,7 +26,7 @@ image:
 # Replica count for the Odoo application pod (not the nginx gateway)
 # minReplicas in autoscaling overrides this at runtime via HPA
 # ------------------------------------------------------------------------------
-replicaCount: 3
+replicaCount: 2
 
 # ------------------------------------------------------------------------------
 # nginx Gateway

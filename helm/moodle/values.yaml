@@ -18,7 +18,7 @@ image:
 # ------------------------------------------------------------------------------
 # Replica count — HPA minReplicas overrides at runtime
 # ------------------------------------------------------------------------------
-replicaCount: 3
+replicaCount: 2
 
 # ------------------------------------------------------------------------------
 # Kubernetes Service (NodePort — consumed by the ALB target group)
