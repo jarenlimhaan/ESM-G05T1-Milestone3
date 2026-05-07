@@ -52,14 +52,14 @@ systemApps:
       cloudProvider: aws
       awsRegion: ap-southeast-1
       autoDiscovery:
-        clusterName: ""   # TODO: fill in from `terraform output eks_cluster_name` after apply
+        clusterName: esm-enterprise-prod-eks
       rbac:
         create: true
         serviceAccount:
           create: true
           name: cluster-autoscaler
           annotations:
-            eks.amazonaws.com/role-arn: ""   # TODO: fill in from `terraform output eks_cluster_autoscaler_role_arn` after apply
+            eks.amazonaws.com/role-arn: arn:aws:iam::990521646880:role/esm-enterprise-prod-cluster-autoscaler-role
       extraArgs:
         scale-down-delay-after-add: 10m
         scale-down-unneeded-time: 10m

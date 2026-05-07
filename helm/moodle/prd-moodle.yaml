@@ -1,29 +1,27 @@
 # ==============================================================================
 # Moodle — Production Overlay
 # ==============================================================================
-# Fill every "" value from `terraform output` after `terraform apply`.
-# ==============================================================================
 
 image:
   tag: "latest"
 
 db:
-  host: ""            # TODO: terraform output -raw moodle_rds_endpoint
-  name: ""            # TODO: terraform output -raw moodle_db_name
-  user: ""            # TODO: terraform output -raw moodle_db_username
+  host: "esm-enterprise-prod-moodle.c9asmcmsm7pz.ap-southeast-1.rds.amazonaws.com"
+  name: "moodledb"
+  user: "moodle_admin"
 
 persistence:
-  efsId: ""           # TODO: terraform output -raw efs_id
-  accessPointId: ""   # TODO: terraform output -raw efs_moodle_access_point_id
+  efsId: "fs-09adfe24a1c9304eb"
+  accessPointId: "fsap-0e0303c8316fbcec6"
 
 moodle:
-  url: ""             # TODO: internal ALB FQDN + /moodle
-  adminUser: ""       # TODO: set desired Moodle admin username
-  adminEmail: ""      # TODO: set Moodle admin e-mail address
+  url: "http://moodle.internal.esm.local"
+  adminUser: ""   # set your Moodle admin username
+  adminEmail: ""  # set your Moodle admin e-mail
 
 serviceAccount:
-  irsaRoleArn: ""     # TODO: terraform output -raw moodle_irsa_role_arn
+  irsaRoleArn: "arn:aws:iam::990521646880:role/esm-enterprise-prod-moodle-irsa"
 
 secrets:
-  dbPasswordSecretId: ""      # TODO: terraform output -raw moodle_db_password_secret_id
-  adminPasswordSecretId: ""   # TODO: terraform output -raw moodle_admin_password_secret_id
+  dbPasswordSecretId: "esm/prod/moodle-db-password"
+  adminPasswordSecretId: "esm/prod/moodle-admin-password"

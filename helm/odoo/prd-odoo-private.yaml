@@ -1,30 +1,28 @@
 # ==============================================================================
 # Odoo Private — Production Overlay
 # ==============================================================================
-# Fill every "" value from `terraform output` after `terraform apply`.
-# ==============================================================================
 
 instance: "private"
 
 image:
-  repository: ""      # TODO: terraform output -raw ecr_odoo_repository_url
+  repository: "990521646880.dkr.ecr.ap-southeast-1.amazonaws.com/esm/odoo17"  # run scripts/deploy-odoo-image-to-eks.sh first
   tag: "latest"
 
 service:
   nodePort: 30081
 
 db:
-  host: ""            # TODO: terraform output -raw odoo_rds_endpoint
-  name: ""            # TODO: terraform output -raw odoo_db_name
-  user: ""            # TODO: terraform output -raw odoo_db_username
+  host: "esm-enterprise-prod-odoo.c9asmcmsm7pz.ap-southeast-1.rds.amazonaws.com"
+  name: "odoodb"
+  user: "odoo_admin"
 
 persistence:
   storageClassName: "efs-static-odoo-private"
-  efsId: ""           # TODO: terraform output -raw efs_id
-  accessPointId: ""   # TODO: terraform output -raw efs_odoo_private_access_point_id
+  efsId: "fs-09adfe24a1c9304eb"
+  accessPointId: "fsap-04ac141e231cbf101"
 
 serviceAccount:
-  irsaRoleArn: ""     # TODO: terraform output -raw odoo_private_irsa_role_arn
+  irsaRoleArn: "arn:aws:iam::990521646880:role/esm-enterprise-prod-odoo-private-irsa"
 
 secrets:
-  dbPasswordSecretId: ""  # TODO: terraform output -raw odoo_db_password_secret_id
+  dbPasswordSecretId: "esm/prod/odoo-db-password"

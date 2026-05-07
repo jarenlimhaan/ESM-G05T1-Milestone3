@@ -31,4 +31,13 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+  ignoreDifferences:
+    - group: ""
+      kind: PersistentVolume
+      jsonPointers:
+        - /spec/claimRef
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
 {{- end }}
