@@ -1,0 +1,24 @@
+{{- if eq .Values.instance "public" }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-public
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: esm-public
+    alb.ingress.kubernetes.io/group.order: {{ .Values.ingress.groupOrder | quote }}
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /odoo
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}
+                port:
+                  number: 80
+{{- end }}
