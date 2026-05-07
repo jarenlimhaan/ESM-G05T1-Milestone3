@@ -127,7 +127,6 @@ FILESTORE_DIR="${REPO_ROOT}/filestore/odoo"
 MODULE_UPGRADE_LIST="helpdesk_mgmt,helpdesk_mgmt_merge,helpdesk_mgmt_project,helpdesk_mgmt_sale,helpdesk_ticket_related,helpdesk_type"
 
 SKIP_IMAGE_PUSH="false"
-SKIP_DEPLOY="false"
 SKIP_DB_RESTORE="false"
 SKIP_OSTICKET_DB_RESTORE="false"
 SKIP_MOODLE_DB_RESTORE="false"
@@ -255,10 +254,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-image-push)
       SKIP_IMAGE_PUSH="true"
-      shift
-      ;;
-    --skip-deploy)
-      SKIP_DEPLOY="true"
       shift
       ;;
     --skip-db-restore)
@@ -445,32 +440,6 @@ if [[ -n "${OSTICKET_IMAGE}" ]]; then
   echo "Using osTicket image: ${OSTICKET_IMAGE}"
 fi
 
-if [[ "${SKIP_DEPLOY}" != "true" ]]; then
-  if [[ -z "${TARGET_IMAGE}" && "${SKIP_IMAGE_PUSH}" == "true" ]]; then
-    TARGET_IMAGE="$(kubectl get deployment odoo-private -n odoo-private -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-  fi
-  if [[ -z "${TARGET_IMAGE}" && "${SKIP_IMAGE_PUSH}" == "true" ]]; then
-    LATEST_ECR_TAG="$(resolve_latest_ecr_tag "${AWS_REGION}" "${ECR_REPO_NAME}")"
-    if [[ -n "${LATEST_ECR_TAG}" && "${LATEST_ECR_TAG}" != "None" ]]; then
-      TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPO_NAME}:${LATEST_ECR_TAG}"
-      echo "Resolved latest ECR image for --skip-image-push: ${TARGET_IMAGE}"
-    else
-      echo "Error: --skip-image-push requires --target-image, an existing odoo-private deployment image, or a tagged image in ECR repo '${ECR_REPO_NAME}'." >&2
-      exit 1
-    fi
-  fi
-  if [[ "${SKIP_IMAGE_PUSH}" == "true" && "${TARGET_IMAGE}" == *":latest" ]]; then
-    LATEST_ECR_TAG="$(resolve_latest_ecr_tag "${AWS_REGION}" "${ECR_REPO_NAME}")"
-    if [[ -n "${LATEST_ECR_TAG}" && "${LATEST_ECR_TAG}" != "None" ]]; then
-      TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPO_NAME}:${LATEST_ECR_TAG}"
-      echo "Replaced :latest with latest tagged ECR image: ${TARGET_IMAGE}"
-    fi
-  fi
-  if [[ -z "${TARGET_IMAGE}" ]]; then
-    TARGET_IMAGE="${ECR_REGISTRY}/${ECR_REPO_NAME}:${IMAGE_TAG}"
-  fi
-fi
-
 if [[ "${SKIP_IMAGE_PUSH}" != "true" ]]; then
   echo "Validating source image exists locally: ${SOURCE_IMAGE}"
   docker image inspect "${SOURCE_IMAGE}" >/dev/null
@@ -488,62 +457,6 @@ if [[ "${SKIP_IMAGE_PUSH}" != "true" ]]; then
   docker push "${TARGET_IMAGE}"
 else
   echo "Skipping image push, using target image reference: ${TARGET_IMAGE}"
-fi
-
-if [[ "${SKIP_DEPLOY}" != "true" ]]; then
-  DEPLOY_ARGS=(
-    --terraform-dir "${TERRAFORM_DIR}"
-    --aws-region "${AWS_REGION}"
-    --odoo-db-user "${ODOO_DB_USER}"
-    --odoo-image "${TARGET_IMAGE}"
-  )
-  if [[ -n "${OSTICKET_DB_USER}" ]]; then
-    DEPLOY_ARGS+=(--osticket-db-user "${OSTICKET_DB_USER}")
-  fi
-  if [[ -n "${OSTICKET_DB_NAME}" ]]; then
-    DEPLOY_ARGS+=(--osticket-db-name "${OSTICKET_DB_NAME}")
-  fi
-  if [[ -n "${OSTICKET_IMAGE}" ]]; then
-    DEPLOY_ARGS+=(--osticket-image "${OSTICKET_IMAGE}")
-  fi
-  if [[ -n "${ODOO_SECRET_ID}" ]]; then
-    DEPLOY_ARGS+=(--odoo-secret-id "${ODOO_SECRET_ID}")
-  elif [[ -n "${ODOO_DB_PASSWORD}" ]]; then
-    DEPLOY_ARGS+=(--odoo-db-password "${ODOO_DB_PASSWORD}")
-  else
-    echo "Error: provide --odoo-db-password or --odoo-secret-id for deploy step." >&2
-    exit 1
-  fi
-  if [[ -n "${MOODLE_SECRET_ID}" ]]; then
-    DEPLOY_ARGS+=(--moodle-secret-id "${MOODLE_SECRET_ID}")
-  elif [[ -n "${MOODLE_DB_PASSWORD}" ]]; then
-    DEPLOY_ARGS+=(--moodle-db-password "${MOODLE_DB_PASSWORD}")
-  else
-    echo "Error: provide --moodle-db-password or --moodle-secret-id for deploy step." >&2
-    exit 1
-  fi
-  if [[ -n "${OSTICKET_SECRET_ID}" ]]; then
-    DEPLOY_ARGS+=(--osticket-secret-id "${OSTICKET_SECRET_ID}")
-  elif [[ -n "${OSTICKET_DB_PASSWORD}" ]]; then
-    DEPLOY_ARGS+=(--osticket-db-password "${OSTICKET_DB_PASSWORD}")
-  fi
-
-  if [[ -z "${ODOO_DB_PASSWORD}" ]]; then
-    ODOO_DB_PASSWORD="$(kubectl get secret odoo-db -n odoo-private -o jsonpath='{.data.password}' | base64 --decode)"
-  fi
-
-  # Required by deploy-k8s-apps.sh as well.
-  if [[ -z "${ODOO_DB_PASSWORD}" ]]; then
-    echo "Error: resolved Odoo DB password is empty." >&2
-    exit 1
-  fi
-
-  echo "Deploying manifests with Odoo image ${TARGET_IMAGE}..."
-  "${SCRIPT_DIR}/deploy-k8s-apps.sh" --skip-odoo-rollout-wait "${DEPLOY_ARGS[@]}"
-else
-  if [[ -z "${ODOO_DB_PASSWORD}" ]]; then
-    ODOO_DB_PASSWORD="$(kubectl get secret odoo-db -n odoo-private -o jsonpath='{.data.password}' | base64 --decode || true)"
-  fi
 fi
 
 if [[ "${SKIP_DB_RESTORE}" != "true" || "${SKIP_FILESTORE_SYNC}" != "true" || "${SKIP_MODULE_UPGRADE}" != "true" ]]; then
@@ -609,60 +522,19 @@ gunzip -c /tmp/odoo.sql.gz | psql -h '${ODOO_DB_HOST}' -U '${ODOO_DB_USER}' -d '
 fi
 
 if [[ "${SKIP_FILESTORE_SYNC}" != "true" ]]; then
-  # Ensure the PV and PVC exist before mounting them in the sync pod.
-  # deploy-k8s-apps.sh normally creates these; we do it here for the standalone restore path.
-  if ! kubectl get pvc odoo-pvc -n odoo-private >/dev/null 2>&1; then
-    echo "Creating efs-static StorageClass and odoo-pvc (EFS: ${EFS_ID} / ${EFS_ACCESS_POINT_ID})..."
-    cat <<PVEOF | kubectl apply -f - >/dev/null
-kind: StorageClass
-apiVersion: storage.k8s.io/v1
-metadata:
-  name: efs-static
-provisioner: efs.csi.aws.com
-volumeBindingMode: Immediate
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: odoo-efs-pv
-spec:
-  capacity:
-    storage: 10Gi
-  volumeMode: Filesystem
-  accessModes:
-    - ReadWriteMany
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: efs-static
-  csi:
-    driver: efs.csi.aws.com
-    volumeHandle: "${EFS_ID}::${EFS_ACCESS_POINT_ID}"
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: odoo-pvc
-  namespace: odoo-private
-spec:
-  accessModes:
-    - ReadWriteMany
-  resources:
-    requests:
-      storage: 10Gi
-  storageClassName: efs-static
-  volumeName: odoo-efs-pv
-PVEOF
-    # Wait for PVC to bind
-    for _i in $(seq 1 12); do
-      PVC_STATUS="$(kubectl get pvc odoo-pvc -n odoo-private -o jsonpath='{.status.phase}' 2>/dev/null || true)"
-      if [[ "${PVC_STATUS}" == "Bound" ]]; then break; fi
-      echo "  Waiting for odoo-pvc to bind (${PVC_STATUS})..."
-      sleep 5
-    done
-    PVC_STATUS="$(kubectl get pvc odoo-pvc -n odoo-private -o jsonpath='{.status.phase}' 2>/dev/null || true)"
-    if [[ "${PVC_STATUS}" != "Bound" ]]; then
-      echo "Error: odoo-pvc did not bind within 60s (status: ${PVC_STATUS}). Check the EFS CSI driver and StorageClass." >&2
-      exit 1
-    fi
+  # The odoo-private-pvc is created by ArgoCD syncing the Helm chart.
+  # Wait for it to be bound before proceeding.
+  echo "Waiting for odoo-private-pvc to be Bound (created by ArgoCD)..."
+  for _i in $(seq 1 24); do
+    PVC_STATUS="$(kubectl get pvc odoo-private-pvc -n odoo-private -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+    if [[ "${PVC_STATUS}" == "Bound" ]]; then break; fi
+    echo "  Waiting for odoo-private-pvc to bind (${PVC_STATUS:-NotFound})..."
+    sleep 5
+  done
+  PVC_STATUS="$(kubectl get pvc odoo-private-pvc -n odoo-private -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+  if [[ "${PVC_STATUS}" != "Bound" ]]; then
+    echo "Error: odoo-private-pvc did not bind within 120s (status: ${PVC_STATUS}). Ensure ArgoCD has synced the odoo-private Application." >&2
+    exit 1
   fi
 
   POD_NAME="odoo-filestore-sync-$(date +%s)"
@@ -685,7 +557,7 @@ spec:
   volumes:
     - name: odoo-data
       persistentVolumeClaim:
-        claimName: odoo-pvc
+        claimName: odoo-private-pvc
 EOF
   kubectl wait --for=condition=Ready "pod/${POD_NAME}" -n odoo-private --timeout=180s >/dev/null
   kubectl exec -n odoo-private "${POD_NAME}" -- sh -c "mkdir -p /mnt/odoo-data/filestore && rm -rf /mnt/odoo-data/filestore/${ODOO_DB_NAME}"

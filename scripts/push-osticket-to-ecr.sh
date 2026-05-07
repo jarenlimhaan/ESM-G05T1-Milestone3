@@ -32,21 +32,6 @@ docker push "${ECR_IMAGE}"
 echo ""
 echo "Image pushed: ${ECR_IMAGE}"
 echo ""
-echo "==> Deleting existing osticket K8s deployment (if any)..."
-kubectl delete deployment osticket -n osticket-private --ignore-not-found || true
-
-echo ""
-echo "==> Running deploy with the ECR image (skipping DB restores — run deploy-odoo-image-to-eks.sh separately for full restore)..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"${SCRIPT_DIR}/deploy-odoo-image-to-eks.sh" \
-  --skip-image-push \
-  --target-image "$(kubectl get deployment odoo-private -n odoo-private -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo 'odoo:17')" \
-  --osticket-image "${ECR_IMAGE}" \
-  --skip-db-restore \
-  --skip-osticket-db-restore \
-  --skip-moodle-db-restore \
-  --skip-filestore-sync \
-  --skip-module-upgrade
-
-echo ""
-echo "Done. osTicket redeployed with image: ${ECR_IMAGE}"
+echo "Update helm/osticket/prd-osticket.yaml image.tag to ${ECR_TAG} and commit to git."
+echo "ArgoCD will detect the change and redeploy osTicket automatically."
+echo "Done."
