@@ -345,11 +345,10 @@ if [[ "${PROVISION_INFRA}" == "true" ]]; then
     OSTICKET_DB_PASSWORD="${MOODLE_DB_PASSWORD}"
   fi
 
-  if [[ -z "${ODOO_DB_PASSWORD}" || -z "${MOODLE_DB_PASSWORD}" || -z "${OSTICKET_DB_PASSWORD}" || -z "${OSTICKET_INSTALL_SECRET}" || -z "${OSTICKET_ADMIN_PASSWORD}" ]]; then
+  if [[ -z "${ODOO_DB_PASSWORD}" || -z "${MOODLE_DB_PASSWORD}" || -z "${OSTICKET_INSTALL_SECRET}" || -z "${OSTICKET_ADMIN_PASSWORD}" ]]; then
     echo "Error: missing required Terraform secret vars for --provision-infra." >&2
     [[ -z "${ODOO_DB_PASSWORD}" ]] && echo "  - missing: odoo_db_password" >&2
     [[ -z "${MOODLE_DB_PASSWORD}" ]] && echo "  - missing: moodle_db_password" >&2
-    [[ -z "${OSTICKET_DB_PASSWORD}" ]] && echo "  - missing: osticket_db_password" >&2
     [[ -z "${OSTICKET_INSTALL_SECRET}" ]] && echo "  - missing: osticket_install_secret" >&2
     [[ -z "${OSTICKET_ADMIN_PASSWORD}" ]] && echo "  - missing: osticket_admin_password" >&2
     echo "Provide them via --*-password flags, AWS Secrets Manager IDs, or .env equivalents." >&2
@@ -361,7 +360,6 @@ if [[ "${PROVISION_INFRA}" == "true" ]]; then
   terraform -chdir="${TERRAFORM_DIR}" apply -auto-approve \
     -var="odoo_db_password=${ODOO_DB_PASSWORD}" \
     -var="moodle_db_password=${MOODLE_DB_PASSWORD}" \
-    -var="osticket_db_password=${OSTICKET_DB_PASSWORD}" \
     -var="osticket_install_secret=${OSTICKET_INSTALL_SECRET}" \
     -var="osticket_admin_password=${OSTICKET_ADMIN_PASSWORD}"
 fi

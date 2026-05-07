@@ -107,7 +107,7 @@ variable "vpn_server_certificate_arn" {
 variable "eks_cluster_version" {
   description = "Kubernetes version for EKS cluster"
   type        = string
-  default     = "1.29"
+  default     = "1.30"
 }
 
 variable "eks_node_instance_type" {

@@ -260,6 +260,11 @@ output "efs_moodle_access_point_id" {
   value       = module.efs.moodle_access_point_id
 }
 
+output "efs_osticket_access_point_id" {
+  description = "EFS access point ID used by osTicket (/osticket)"
+  value       = module.efs.osticket_access_point_id
+}
+
 output "efs_dns_name" {
   description = "DNS name of the EFS file system"
   value       = module.efs.efs_dns_name

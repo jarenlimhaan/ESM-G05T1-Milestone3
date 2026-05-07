@@ -42,3 +42,8 @@ output "moodle_access_point_id" {
   description = "EFS access point ID for Moodle (/moodle, uid=33 www-data)"
   value       = aws_efs_access_point.moodle.id
 }
+
+output "osticket_access_point_id" {
+  description = "EFS access point ID for osTicket (/osticket, uid=33 www-data)"
+  value       = aws_efs_access_point.osticket.id
+}

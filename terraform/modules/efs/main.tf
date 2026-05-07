@@ -140,3 +140,35 @@ resource "aws_efs_access_point" "moodle" {
     }
   )
 }
+
+# ==============================================================================
+# EFS Access Point for osTicket
+# ==============================================================================
+# osTicket stores uploaded attachments under /osticket.
+# uid/gid 33 matches www-data, the user the PHP/Apache container runs as.
+
+resource "aws_efs_access_point" "osticket" {
+  file_system_id = aws_efs_file_system.main.id
+
+  posix_user {
+    uid = 33
+    gid = 33
+  }
+
+  root_directory {
+    path = "/osticket"
+    creation_info {
+      owner_uid   = 33
+      owner_gid   = 33
+      permissions = "0755"
+    }
+  }
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name        = "${var.project_name}-${var.environment}-osticket-access-point"
+      Application = "osTicket"
+    }
+  )
+}

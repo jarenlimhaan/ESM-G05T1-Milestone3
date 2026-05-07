@@ -13,9 +13,9 @@ db:
   user: "moodle_admin"
 
 persistence:
-  # EFS access point for osticket not yet provisioned in terraform/modules/efs.
-  # Re-enable after adding the access point and running terraform apply.
-  enabled: false
+  enabled: true
+  efsId: "fs-09adfe24a1c9304eb"
+  accessPointId: "fsap-0c2713097f9e21086"
 
 osticket:
   installName: "ESM Enterprise Support"
