@@ -8,7 +8,7 @@
 #   - GitHub repo URL and target branch
 #   - Kubernetes API server address
 #   - cluster-autoscaler cluster name + IRSA role ARN (from terraform output)
-#   - workloadApps list (Batch 4 — populated after terraform apply)
+#   - workloadApps list
 # ==============================================================================
 
 # Destination cluster for all Applications managed by this chart
@@ -94,11 +94,34 @@ systemApps:
     syncWave: "-1"
 
 # ------------------------------------------------------------------------------
-# Workload Applications — Batch 4
-# Populated after `terraform apply` produces:
-#   - RDS endpoints       (terraform output odoo_rds_endpoint etc.)
-#   - EFS access point IDs (terraform output efs_odoo_access_point_id etc.)
-#   - IRSA role ARNs      (terraform output odoo_private_irsa_role_arn etc.)
-#   - Secret name IDs     (terraform output odoo_db_password_secret_id etc.)
+# Workload Applications
+# Each entry creates one ArgoCD Application pointing at a Helm chart in this
+# repo, merged with the matching prd-<app>.yaml overlay co-located in the
+# chart directory.
+# Fill placeholder values in each overlay after `terraform apply`.
+# valuesFile paths are relative to each chart's path (e.g. helm/odoo/).
 # ------------------------------------------------------------------------------
-workloadApps: []
+workloadApps:
+  - name: odoo-private
+    namespace: odoo-private
+    path: helm/odoo
+    valuesFile: prd-odoo-private.yaml
+    syncWave: "0"
+
+  - name: odoo-public
+    namespace: odoo-public
+    path: helm/odoo
+    valuesFile: prd-odoo-public.yaml
+    syncWave: "0"
+
+  - name: moodle
+    namespace: moodle-private
+    path: helm/moodle
+    valuesFile: prd-moodle.yaml
+    syncWave: "0"
+
+  - name: osticket
+    namespace: osticket-private
+    path: helm/osticket
+    valuesFile: prd-osticket.yaml
+    syncWave: "0"

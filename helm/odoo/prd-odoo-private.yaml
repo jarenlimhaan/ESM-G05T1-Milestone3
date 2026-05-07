@@ -1,0 +1,30 @@
+# ==============================================================================
+# Odoo Private — Production Overlay
+# ==============================================================================
+# Fill every "" value from `terraform output` after `terraform apply`.
+# ==============================================================================
+
+instance: "private"
+
+image:
+  repository: ""      # TODO: terraform output -raw ecr_odoo_repository_url
+  tag: "latest"
+
+service:
+  nodePort: 30081
+
+db:
+  host: ""            # TODO: terraform output -raw odoo_rds_endpoint
+  name: ""            # TODO: terraform output -raw odoo_db_name
+  user: ""            # TODO: terraform output -raw odoo_db_username
+
+persistence:
+  storageClassName: "efs-static-odoo-private"
+  efsId: ""           # TODO: terraform output -raw efs_id
+  accessPointId: ""   # TODO: terraform output -raw efs_odoo_private_access_point_id
+
+serviceAccount:
+  irsaRoleArn: ""     # TODO: terraform output -raw odoo_private_irsa_role_arn
+
+secrets:
+  dbPasswordSecretId: ""  # TODO: terraform output -raw odoo_db_password_secret_id

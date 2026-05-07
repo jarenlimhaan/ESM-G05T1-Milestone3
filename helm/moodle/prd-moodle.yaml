@@ -1,0 +1,29 @@
+# ==============================================================================
+# Moodle — Production Overlay
+# ==============================================================================
+# Fill every "" value from `terraform output` after `terraform apply`.
+# ==============================================================================
+
+image:
+  tag: "latest"
+
+db:
+  host: ""            # TODO: terraform output -raw moodle_rds_endpoint
+  name: ""            # TODO: terraform output -raw moodle_db_name
+  user: ""            # TODO: terraform output -raw moodle_db_username
+
+persistence:
+  efsId: ""           # TODO: terraform output -raw efs_id
+  accessPointId: ""   # TODO: terraform output -raw efs_moodle_access_point_id
+
+moodle:
+  url: ""             # TODO: internal ALB FQDN + /moodle
+  adminUser: ""       # TODO: set desired Moodle admin username
+  adminEmail: ""      # TODO: set Moodle admin e-mail address
+
+serviceAccount:
+  irsaRoleArn: ""     # TODO: terraform output -raw moodle_irsa_role_arn
+
+secrets:
+  dbPasswordSecretId: ""      # TODO: terraform output -raw moodle_db_password_secret_id
+  adminPasswordSecretId: ""   # TODO: terraform output -raw moodle_admin_password_secret_id

@@ -27,7 +27,7 @@ service:
   nodePort: 30082
 
 # ------------------------------------------------------------------------------
-# Database (MariaDB via RDS)
+# Database (MySQL via RDS)
 # ------------------------------------------------------------------------------
 db:
   host: ""                # RDS endpoint, e.g. esm-prod-moodle.xxxx.ap-southeast-1.rds.amazonaws.com
@@ -120,5 +120,5 @@ serviceAccount:
 # secretKeyRef.
 # ------------------------------------------------------------------------------
 secrets:
-  dbPasswordSecretId: ""          # SM secret name for MariaDB password
+  dbPasswordSecretId: ""          # SM secret name for MySQL password
   adminPasswordSecretId: ""       # SM secret name for Moodle admin password

@@ -27,7 +27,7 @@ service:
   nodePort: 30083
 
 # ------------------------------------------------------------------------------
-# Database (MySQL-compatible via RDS MariaDB)
+# Database (MySQL via RDS)
 # ------------------------------------------------------------------------------
 db:
   host: ""                # RDS endpoint, e.g. esm-prod-osticket.xxxx.ap-southeast-1.rds.amazonaws.com

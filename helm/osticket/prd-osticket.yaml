@@ -1,0 +1,32 @@
+# ==============================================================================
+# osTicket — Production Overlay
+# ==============================================================================
+# Fill every "" value from `terraform output` after `terraform apply`.
+# ==============================================================================
+
+image:
+  repository: ""      # TODO: terraform output -raw ecr_osticket_repository_url
+  tag: "latest"
+
+db:
+  host: ""            # TODO: terraform output -raw osticket_rds_endpoint
+  name: ""            # TODO: terraform output -raw osticket_db_name
+  user: ""            # TODO: terraform output -raw osticket_db_username
+
+osticket:
+  installName: "ESM Enterprise Support"
+  installUrl: ""      # TODO: internal ALB FQDN + /osticket
+  installEmail: ""    # TODO: helpdesk notification e-mail address
+  adminFirstname: ""  # TODO: admin first name
+  adminLastname: ""   # TODO: admin last name
+  adminEmail: ""      # TODO: admin e-mail address
+  adminUsername: ""   # TODO: admin username
+  cronInterval: "5"
+
+serviceAccount:
+  irsaRoleArn: ""     # TODO: terraform output -raw osticket_irsa_role_arn
+
+secrets:
+  dbPasswordSecretId: ""      # TODO: terraform output -raw osticket_db_password_secret_id
+  installSecretId: ""         # TODO: terraform output -raw osticket_install_secret_id
+  adminPasswordSecretId: ""   # TODO: terraform output -raw osticket_admin_password_secret_id

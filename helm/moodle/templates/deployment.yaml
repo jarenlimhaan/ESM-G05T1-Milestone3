@@ -38,7 +38,7 @@ spec:
             failureThreshold: 6
           env:
             - name: MOODLE_DB_TYPE
-              value: mariadb
+              value: mysqli
             - name: MOODLE_DB_HOST
               value: {{ .Values.db.host | quote }}
             - name: MOODLE_DB_PORT
