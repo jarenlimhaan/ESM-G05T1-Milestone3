@@ -17,9 +17,11 @@ persistence:
   efsId: "fs-09adfe24a1c9304eb"
   accessPointId: "fsap-0c2713097f9e21086"
 
+replicaCount: 1
+
 osticket:
   installName: "ESM Enterprise Support"
-  installUrl: "http://osticket.internal.esm.local"
+  installUrl: "http://osticket.internal.esm.local/osticket"
   installEmail: ""    # helpdesk notification e-mail
   adminFirstname: ""  # admin first name
   adminLastname: ""   # admin last name
