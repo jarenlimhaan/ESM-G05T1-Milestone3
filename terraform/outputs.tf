@@ -571,3 +571,100 @@ They are read from .env at repo root (see .env.example) or passed as CLI args:
 ================================================================================
 EOT
 }
+
+# ==============================================================================
+# IRSA Outputs
+# ==============================================================================
+
+output "oidc_provider_arn" {
+  description = "ARN of the EKS OIDC provider (used to construct IRSA trust policies)"
+  value       = module.eks.cluster_oidc_provider_arn
+}
+
+output "odoo_private_irsa_role_arn" {
+  description = "IAM role ARN for the Odoo Private service account"
+  value       = aws_iam_role.odoo_private.arn
+}
+
+output "odoo_public_irsa_role_arn" {
+  description = "IAM role ARN for the Odoo Public service account"
+  value       = aws_iam_role.odoo_public.arn
+}
+
+output "moodle_irsa_role_arn" {
+  description = "IAM role ARN for the Moodle service account"
+  value       = aws_iam_role.moodle.arn
+}
+
+output "osticket_irsa_role_arn" {
+  description = "IAM role ARN for the osTicket service account"
+  value       = aws_iam_role.osticket.arn
+}
+
+# ==============================================================================
+# Secret ARNs (used in SecretProviderClass objects)
+# ==============================================================================
+
+output "odoo_db_secret_arn" {
+  description = "ARN of the Odoo DB password secret in Secrets Manager"
+  value       = aws_secretsmanager_secret.odoo_db_password.arn
+}
+
+output "moodle_db_secret_arn" {
+  description = "ARN of the Moodle DB password secret in Secrets Manager"
+  value       = aws_secretsmanager_secret.moodle_db_password.arn
+}
+
+output "moodle_admin_password_secret_arn" {
+  description = "ARN of the Moodle admin password secret in Secrets Manager"
+  value       = aws_secretsmanager_secret.moodle_admin_password.arn
+}
+
+output "osticket_db_secret_arn" {
+  description = "ARN of the osTicket DB password secret in Secrets Manager"
+  value       = aws_secretsmanager_secret.osticket_db_password.arn
+}
+
+output "osticket_install_secret_arn" {
+  description = "ARN of the osTicket install secret in Secrets Manager"
+  value       = aws_secretsmanager_secret.osticket_install_secret.arn
+}
+
+output "osticket_admin_password_arn" {
+  description = "ARN of the osTicket admin password secret in Secrets Manager"
+  value       = aws_secretsmanager_secret.osticket_admin_password.arn
+}
+
+# ==============================================================================
+# Secret Name IDs (used in environments/prod/*.yaml SecretProviderClass params)
+# ==============================================================================
+
+output "odoo_db_password_secret_id" {
+  description = "Secrets Manager secret name/ID for the Odoo DB password"
+  value       = var.odoo_db_password_secret_id
+}
+
+output "moodle_db_password_secret_id" {
+  description = "Secrets Manager secret name/ID for the Moodle DB password"
+  value       = var.moodle_db_password_secret_id
+}
+
+output "moodle_admin_password_secret_id" {
+  description = "Secrets Manager secret name/ID for the Moodle admin password"
+  value       = var.moodle_admin_password_secret_id
+}
+
+output "osticket_db_password_secret_id" {
+  description = "Secrets Manager secret name/ID for the osTicket DB password"
+  value       = var.osticket_db_password_secret_id
+}
+
+output "osticket_install_secret_id" {
+  description = "Secrets Manager secret name/ID for the osTicket install secret"
+  value       = var.osticket_install_secret_id
+}
+
+output "osticket_admin_password_secret_id" {
+  description = "Secrets Manager secret name/ID for the osTicket admin password"
+  value       = var.osticket_admin_password_secret_id
+}
