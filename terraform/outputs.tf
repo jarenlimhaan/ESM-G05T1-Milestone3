@@ -468,18 +468,12 @@ SECRETS MANAGER (auto-created by Terraform):
 2. CONFIGURE KUBECTL:
    - Run: aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.aws_region}
 
-3. SYNC KUBERNETES SECRETS FROM SECRETS MANAGER:
-   - Recommended: add credentials to .env at repo root (see .env.example), then run:
-       ./scripts/sync-k8s-secrets-from-aws.sh --region ${var.aws_region}
-   - Or pass explicitly:
-       ./scripts/sync-k8s-secrets-from-aws.sh \
-           --region ${var.aws_region} \
-           --moodle-admin-password "<your-moodle-admin-password>" \
-           --osticket-install-secret "<your-osticket-install-secret>" \
-           --osticket-admin-password "<your-osticket-admin-password>"
-   - This fetches DB passwords from Secrets Manager and applies them as K8s Secrets.
-   - Must be run once before pods can start successfully (pods reference these secrets).
-   - The CI/CD deploy workflow also runs this automatically on every deploy.
+3. SECRETS ARE MANAGED AUTOMATICALLY:
+   - All 6 secrets (DB passwords + app secrets) are stored in AWS Secrets Manager by Terraform.
+   - Application pods read them at startup via IRSA + Secrets Store CSI Driver (ASCP).
+   - No manual secret-sync script is needed.
+   - To verify a secret was written: aws secretsmanager get-secret-value \
+       --region ${var.aws_region} --secret-id esm/prod/odoo-db-password --query SecretString --output text
 
 4. DEPLOY AND VERIFY APPLICATIONS:
    - Run: ./scripts/deploy-k8s-apps.sh --odoo-image odoo:17 --skip-odoo-rollout-wait
@@ -520,53 +514,75 @@ output "aws_region" {
 # ==============================================================================
 
 output "secrets_manager_info" {
-  description = "Secrets created in AWS Secrets Manager and what still needs to be supplied manually"
+  description = "Secrets created in AWS Secrets Manager and required Terraform input variables"
   value       = <<EOT
 ================================================================================
-                     AWS Secrets Manager — What Was Created
+                     AWS Secrets Manager — All 6 Secrets Created
 ================================================================================
 
-The following secrets were AUTOMATICALLY created by Terraform on apply.
-You do NOT need to pass these as CLI arguments to scripts.
+ALL of the following secrets are AUTOMATICALLY created and managed by Terraform.
+Pods read them at runtime via the AWS Secrets Store CSI Driver (ASCP) + IRSA.
+You do NOT need to pass these as CLI arguments to application scripts.
+
+  DATABASE PASSWORDS (written from terraform.tfvars on apply):
 
   Secret name: ${var.odoo_db_password_secret_id}
-  Contains: Odoo PostgreSQL password (set via var.odoo_db_password in terraform.tfvars)
+  Contains: Odoo PostgreSQL password
+  Terraform variable: var.odoo_db_password
   Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
                --secret-id ${var.odoo_db_password_secret_id} --query SecretString --output text
 
   Secret name: ${var.moodle_db_password_secret_id}
-  Contains: Moodle MySQL password (set via var.moodle_db_password in terraform.tfvars)
+  Contains: Moodle MySQL password
+  Terraform variable: var.moodle_db_password
   Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
                --secret-id ${var.moodle_db_password_secret_id} --query SecretString --output text
 
   Secret name: ${var.osticket_db_password_secret_id}
-  Contains: osTicket MySQL password (set via var.osticket_db_password in terraform.tfvars)
+  Contains: osTicket MySQL password
+  Terraform variable: var.osticket_db_password
   Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
                --secret-id ${var.osticket_db_password_secret_id} --query SecretString --output text
 
+  APPLICATION SECRETS (written from terraform.tfvars on apply):
+
+  Secret name: ${var.moodle_admin_password_secret_id}
+  Contains: Moodle web admin password
+  Terraform variable: var.moodle_admin_password
+  Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
+               --secret-id ${var.moodle_admin_password_secret_id} --query SecretString --output text
+
+  Secret name: ${var.osticket_install_secret_id}
+  Contains: osTicket internal install/signing key
+  Terraform variable: var.osticket_install_secret
+  Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
+               --secret-id ${var.osticket_install_secret_id} --query SecretString --output text
+
+  Secret name: ${var.osticket_admin_password_secret_id}
+  Contains: osTicket web admin password
+  Terraform variable: var.osticket_admin_password
+  Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
+               --secret-id ${var.osticket_admin_password_secret_id} --query SecretString --output text
+
 ================================================================================
-                  What You Still Need to Provide Manually
+              What You Must Supply Before Running terraform apply
 ================================================================================
 
-The following values are NOT stored in Secrets Manager.
-They are read from .env at repo root (see .env.example) or passed as CLI args:
+All 6 secret values must be set in terraform.tfvars (gitignored) before apply.
+Terraform writes these values into Secrets Manager — they are NOT hardcoded.
 
-  --moodle-admin-password     Moodle web admin password       (.env: MOODLE_ADMIN_PASSWORD)
-  --osticket-install-secret   osTicket internal signing key   (.env: INSTALL_SECRET)
-  --osticket-admin-password   osTicket web admin password     (.env: ADMIN_PASSWORD)
+  Required entries in terraform/terraform.tfvars:
 
-  Recommended — create .env once and scripts read it automatically:
-    MOODLE_ADMIN_PASSWORD=<your-moodle-admin-password>
-    INSTALL_SECRET=<your-osticket-install-secret>
-    ADMIN_PASSWORD=<your-osticket-admin-password>
-  (The .env file is gitignored. See .env.example for the full template.)
+    odoo_db_password         = "<odoo-postgres-password>"
+    moodle_db_password       = "<moodle-mysql-password>"
+    osticket_db_password     = "<osticket-mysql-password>"
+    moodle_admin_password    = "<moodle-web-admin-password>"
+    osticket_install_secret  = "<long-random-signing-key>"
+    osticket_admin_password  = "<osticket-web-admin-password>"
 
-  If passing explicitly:
-    ./scripts/sync-k8s-secrets-from-aws.sh \
-      --region ${var.aws_region} \
-      --moodle-admin-password "<your-moodle-admin-password>" \
-      --osticket-install-secret "<your-install-secret>" \
-      --osticket-admin-password "<your-admin-password>"
+  Once terraform apply completes, secrets are live in AWS Secrets Manager.
+  Application pods fetch them at startup via IRSA + Secrets Store CSI Driver.
+  No manual script invocation is needed to sync secrets to Kubernetes.
 
 ================================================================================
 EOT
