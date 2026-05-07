@@ -6,7 +6,7 @@ instance: "public"
 
 image:
   repository: "990521646880.dkr.ecr.ap-southeast-1.amazonaws.com/esm/odoo17"  # run scripts/deploy-odoo-image-to-eks.sh first
-  tag: "latest"
+  tag: "17"
 
 service:
   nodePort: 30080
