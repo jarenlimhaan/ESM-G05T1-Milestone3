@@ -207,6 +207,35 @@ output "moodle_rds_instance_id" {
   value       = module.rds.moodle_instance_id
 }
 
+output "moodle_db_name" {
+  description = "Moodle database schema name on the shared MySQL RDS"
+  value       = var.moodle_db_name
+}
+
+output "moodle_db_username" {
+  description = "MySQL master username (used by both Moodle and osTicket)"
+  value       = var.moodle_db_username
+  sensitive   = true
+}
+
+# osTicket shares the Moodle MySQL RDS instance — different schema, same credentials.
+output "osticket_rds_endpoint" {
+  description = "Endpoint of the shared MySQL RDS used by osTicket (same instance as Moodle)"
+  value       = module.rds.moodle_endpoint
+  sensitive   = true
+}
+
+output "osticket_db_name" {
+  description = "osTicket database schema name on the shared MySQL RDS"
+  value       = var.osticket_db_name
+}
+
+output "osticket_db_username" {
+  description = "MySQL username for osTicket (shared RDS master user, same as Moodle)"
+  value       = var.moodle_db_username
+  sensitive   = true
+}
+
 # ==============================================================================
 # EFS Outputs
 # ==============================================================================
@@ -444,7 +473,7 @@ AUDIT:
 SECRETS MANAGER (auto-created by Terraform):
   Odoo DB Password:     ${var.odoo_db_password_secret_id}
   Moodle DB Password:   ${var.moodle_db_password_secret_id}
-  osTicket DB Password: ${var.osticket_db_password_secret_id}
+  osTicket DB Password: (shared — uses Moodle DB secret: ${var.moodle_db_password_secret_id})
 
   NOT in Secrets Manager — loaded from .env or CLI arg:
     moodle_admin_password    -> .env key: MOODLE_ADMIN_PASSWORD
@@ -533,16 +562,10 @@ You do NOT need to pass these as CLI arguments to application scripts.
                --secret-id ${var.odoo_db_password_secret_id} --query SecretString --output text
 
   Secret name: ${var.moodle_db_password_secret_id}
-  Contains: Moodle MySQL password
+  Contains: Moodle + osTicket MySQL password (both apps share the same RDS instance)
   Terraform variable: var.moodle_db_password
   Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
                --secret-id ${var.moodle_db_password_secret_id} --query SecretString --output text
-
-  Secret name: ${var.osticket_db_password_secret_id}
-  Contains: osTicket MySQL password
-  Terraform variable: var.osticket_db_password
-  Read with: aws secretsmanager get-secret-value --region ${var.aws_region} \
-               --secret-id ${var.osticket_db_password_secret_id} --query SecretString --output text
 
   APPLICATION SECRETS (written from terraform.tfvars on apply):
 
@@ -574,8 +597,7 @@ Terraform writes these values into Secrets Manager — they are NOT hardcoded.
   Required entries in terraform/terraform.tfvars:
 
     odoo_db_password         = "<odoo-postgres-password>"
-    moodle_db_password       = "<moodle-mysql-password>"
-    osticket_db_password     = "<osticket-mysql-password>"
+    moodle_db_password       = "<moodle-mysql-password>"  # also used by osTicket (shared RDS)
     moodle_admin_password    = "<moodle-web-admin-password>"
     osticket_install_secret  = "<long-random-signing-key>"
     osticket_admin_password  = "<osticket-web-admin-password>"
@@ -637,8 +659,8 @@ output "moodle_admin_password_secret_arn" {
 }
 
 output "osticket_db_secret_arn" {
-  description = "ARN of the osTicket DB password secret in Secrets Manager"
-  value       = aws_secretsmanager_secret.osticket_db_password.arn
+  description = "ARN of the DB password secret used by osTicket (shared Moodle MySQL RDS)"
+  value       = aws_secretsmanager_secret.moodle_db_password.arn
 }
 
 output "osticket_install_secret_arn" {
@@ -671,8 +693,8 @@ output "moodle_admin_password_secret_id" {
 }
 
 output "osticket_db_password_secret_id" {
-  description = "Secrets Manager secret name/ID for the osTicket DB password"
-  value       = var.osticket_db_password_secret_id
+  description = "Secrets Manager secret name used by osTicket for DB auth (shared Moodle MySQL RDS)"
+  value       = var.moodle_db_password_secret_id
 }
 
 output "osticket_install_secret_id" {

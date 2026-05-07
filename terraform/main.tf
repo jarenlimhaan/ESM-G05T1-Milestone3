@@ -35,16 +35,10 @@ resource "aws_secretsmanager_secret_version" "moodle_db_password" {
   secret_string = var.moodle_db_password
 }
 
-resource "aws_secretsmanager_secret" "osticket_db_password" {
-  name                    = var.osticket_db_password_secret_id
-  recovery_window_in_days = 0
-  tags                    = local.common_tags
-}
-
-resource "aws_secretsmanager_secret_version" "osticket_db_password" {
-  secret_id     = aws_secretsmanager_secret.osticket_db_password.id
-  secret_string = var.osticket_db_password
-}
+# osTicket DB password — osTicket shares the same MySQL RDS instance as Moodle.
+# Both apps connect with the same master credentials (moodle_db_password).
+# No separate secret is required; the osticket IRSA role is granted access
+# to moodle_db_password so the CSI driver fetches the correct credential.
 
 resource "aws_secretsmanager_secret" "moodle_admin_password" {
   name                    = var.moodle_admin_password_secret_id
@@ -588,7 +582,8 @@ resource "kubernetes_secret" "osticket_db" {
     namespace = kubernetes_namespace.osticket_private.metadata[0].name
   }
   data = {
-    password       = aws_secretsmanager_secret_version.osticket_db_password.secret_string
+    # osTicket shares the Moodle MySQL RDS instance — use the same master credential.
+    password       = aws_secretsmanager_secret_version.moodle_db_password.secret_string
     install_secret = var.osticket_install_secret
     admin_password = var.osticket_admin_password
   }
@@ -807,7 +802,8 @@ data "aws_iam_policy_document" "osticket_secrets" {
     effect  = "Allow"
     actions = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
     resources = [
-      aws_secretsmanager_secret.osticket_db_password.arn,
+      # DB password: osTicket shares the Moodle MySQL RDS — use moodle_db_password secret.
+      aws_secretsmanager_secret.moodle_db_password.arn,
       aws_secretsmanager_secret.osticket_install_secret.arn,
       aws_secretsmanager_secret.osticket_admin_password.arn,
     ]

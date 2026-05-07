@@ -9,9 +9,9 @@ image:
   tag: "latest"
 
 db:
-  host: ""            # TODO: terraform output -raw osticket_rds_endpoint
-  name: ""            # TODO: terraform output -raw osticket_db_name
-  user: ""            # TODO: terraform output -raw osticket_db_username
+  host: ""            # TODO: terraform output -raw osticket_rds_endpoint  (shared Moodle MySQL RDS)
+  name: ""            # TODO: terraform output -raw osticket_db_name        (default: osticketdb)
+  user: ""            # TODO: terraform output -raw osticket_db_username    (shared MySQL master user)
 
 osticket:
   installName: "ESM Enterprise Support"
@@ -27,6 +27,7 @@ serviceAccount:
   irsaRoleArn: ""     # TODO: terraform output -raw osticket_irsa_role_arn
 
 secrets:
-  dbPasswordSecretId: ""      # TODO: terraform output -raw osticket_db_password_secret_id
+  # osTicket shares the Moodle MySQL RDS — point at the moodle DB password secret.
+  dbPasswordSecretId: ""      # TODO: terraform output -raw moodle_db_password_secret_id
   installSecretId: ""         # TODO: terraform output -raw osticket_install_secret_id
   adminPasswordSecretId: ""   # TODO: terraform output -raw osticket_admin_password_secret_id

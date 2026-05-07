@@ -203,17 +203,13 @@ variable "moodle_admin_password_secret_id" {
   default     = "esm/prod/moodle-admin-password"
 }
 
-variable "osticket_db_password" {
-  description = "Password for osTicket MySQL database (shared MySQL instance)"
-  type        = string
-  sensitive   = true
-  default     = null
-}
+# osticket_db_password removed — osTicket shares the Moodle MySQL RDS instance
+# and uses the same master credentials (moodle_db_password).
 
-variable "osticket_db_password_secret_id" {
-  description = "AWS Secrets Manager secret ID containing osTicket DB password"
+variable "osticket_db_name" {
+  description = "Database schema name for osTicket on the shared MySQL RDS instance"
   type        = string
-  default     = "esm/prod/osticket-db-password"
+  default     = "osticketdb"
 }
 
 variable "osticket_install_secret" {
