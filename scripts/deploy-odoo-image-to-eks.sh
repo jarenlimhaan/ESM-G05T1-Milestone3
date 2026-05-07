@@ -59,6 +59,100 @@ resolve_latest_ecr_tag() {
     --output text 2>/dev/null || true
 }
 
+wait_for_service_endpoints() {
+  local namespace="$1"
+  local service="$2"
+  local min_count="${3:-1}"
+  local timeout_seconds="${4:-300}"
+  local start_ts
+  start_ts="$(date +%s)"
+
+  echo "Waiting for ${namespace}/${service} to have at least ${min_count} endpoint(s)..."
+  while true; do
+    local endpoints
+    local count
+    endpoints="$(kubectl get endpoints "${service}" -n "${namespace}" -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)"
+    count="$(wc -w <<<"${endpoints}" | tr -d ' ')"
+    if [[ "${count}" -ge "${min_count}" ]]; then
+      echo "${namespace}/${service} endpoints ready: ${endpoints}"
+      return 0
+    fi
+
+    if (( $(date +%s) - start_ts >= timeout_seconds )); then
+      echo "Error: timed out waiting for ${namespace}/${service} endpoints." >&2
+      kubectl get pods -n "${namespace}" -o wide || true
+      kubectl describe service "${service}" -n "${namespace}" || true
+      return 1
+    fi
+    sleep 5
+  done
+}
+
+wait_for_public_odoo_http() {
+  local url=""
+  local required_successes=3
+  local successes=0
+  local timeout_seconds=420
+  local start_ts
+  start_ts="$(date +%s)"
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "Warning: curl is not available; skipping public ALB HTTP readiness check."
+    return 0
+  fi
+
+  if terraform -chdir="${TERRAFORM_DIR}" output -raw public_alb_dns_name >/dev/null 2>&1; then
+    url="http://$(terraform -chdir="${TERRAFORM_DIR}" output -raw public_alb_dns_name)/"
+  fi
+  if [[ -z "${url}" ]]; then
+    echo "Warning: public_alb_dns_name Terraform output unavailable; skipping public ALB HTTP readiness check."
+    return 0
+  fi
+
+  echo "Waiting for public Odoo URL to return ${required_successes} consecutive HTTP 200 responses: ${url}"
+  while true; do
+    local code
+    code="$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 20 "${url}" 2>/dev/null || true)"
+    if [[ "${code}" == "200" ]]; then
+      successes=$((successes + 1))
+      echo "Public Odoo HTTP check ${successes}/${required_successes}: ${code}"
+      if [[ "${successes}" -ge "${required_successes}" ]]; then
+        return 0
+      fi
+    else
+      if [[ "${successes}" -gt 0 ]]; then
+        echo "Public Odoo HTTP check reset after status '${code:-no-response}'."
+      fi
+      successes=0
+      echo "Public Odoo not stable yet: ${code:-no-response}"
+    fi
+
+    if (( $(date +%s) - start_ts >= timeout_seconds )); then
+      echo "Error: public Odoo did not become stable before timeout." >&2
+      kubectl get pods -n odoo-public -o wide || true
+      kubectl get endpoints -n odoo-public -o wide || true
+      kubectl logs -n odoo-public deployment/odoo-public --tail=120 || true
+      kubectl logs -n odoo-public deployment/odoo-public-gateway --tail=120 || true
+      return 1
+    fi
+    sleep 10
+  done
+}
+
+set_odoo_public_hpa_max_replicas() {
+  local max_replicas="$1"
+
+  if ! kubectl get hpa odoo-public -n odoo-public >/dev/null 2>&1; then
+    echo "Warning: odoo-public HPA not found; cannot set maxReplicas=${max_replicas}."
+    return 0
+  fi
+
+  echo "Setting odoo-public HPA maxReplicas=${max_replicas}..."
+  kubectl patch hpa odoo-public -n odoo-public \
+    --type merge \
+    -p "{\"spec\":{\"maxReplicas\":${max_replicas}}}" >/dev/null
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
@@ -510,6 +604,9 @@ else
 fi
 
 if [[ "${SKIP_DB_RESTORE}" != "true" || "${SKIP_FILESTORE_SYNC}" != "true" || "${SKIP_MODULE_UPGRADE}" != "true" ]]; then
+  # Keep public Odoo single-replica while DB/filestore/bootstrap churn is happening.
+  # Final desired state is restored after HTTP readiness is proven.
+  set_odoo_public_hpa_max_replicas 1
   echo "Scaling Odoo deployments down during bootstrap..."
   kubectl scale deployment/odoo-private -n odoo-private --replicas=0 >/dev/null || true
   kubectl scale deployment/odoo-public -n odoo-public --replicas=0 >/dev/null || true
@@ -670,6 +767,12 @@ if [[ "${SKIP_DB_RESTORE}" != "true" || "${SKIP_FILESTORE_SYNC}" != "true" || "$
   kubectl scale deployment/odoo-public -n odoo-public --replicas=1 >/dev/null || true
   kubectl rollout status deployment/odoo-private -n odoo-private --timeout=300s
   kubectl rollout status deployment/odoo-public -n odoo-public --timeout=300s
+  wait_for_service_endpoints odoo-public odoo-public 1 300
+  wait_for_service_endpoints odoo-public odoo-public-backend 1 300
+  wait_for_public_odoo_http
+  set_odoo_public_hpa_max_replicas 3
+  wait_for_service_endpoints odoo-public odoo-public-backend 1 300
+  wait_for_public_odoo_http
   ODOO_SCALED_DOWN="false"
 fi
 

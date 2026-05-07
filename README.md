@@ -1,55 +1,36 @@
 ﻿# ESM AWS + Kubernetes
 
-This repository provisions AWS infrastructure with Terraform and deploys apps to EKS with Kubernetes manifests.
+This repository provisions the ESM AWS environment through a three-level landing-zone Terraform layout, then deploys the Kubernetes workloads and bootstraps application data.
 
 ## Architecture Summary
 
-- Public access:
-  - Odoo (public) at root path on public ALB domain.
-- Internal (VPN only):
-  - Odoo (internal), Moodle, and osTicket at root path on internal private DNS hostnames.
-- Infra:
-  - VPC, EKS, RDS (Postgres + MySQL), EFS, ALB (public/internal), VPN, WAF, Backup, Monitoring.
+- Public access: Odoo public site through the public ALB.
+- Internal access: Odoo internal, Moodle, and osTicket through VPN/private DNS.
+- Infrastructure: VPC, EKS, RDS, EFS, ALBs, VPN, WAF, AWS Backup, CloudTrail, and CloudWatch monitoring.
 
 ## Repo Layout
 
-- `terraform/lz0-storage/` -> level 0 (foundation/storage/audit)
-- `terraform/lz1-network/` -> level 1 (VPC/security/VPN)
-- `terraform/lz2-orchestration/` -> level 2 (EKS/RDS/EFS/ALB/DNS/WAF/monitoring/apps)
-- `k8s/` -> Kubernetes manifests (template placeholders)
-- `scripts/` -> deploy/teardown/VPN helper scripts
-
-## Landing Zone Apply/Destroy
-
-Apply by dependency order:
-
-```bash
-./scripts/apply-landing-zones.sh \
-  --aws-region ap-southeast-1 \
-  --odoo-db-password "..." \
-  --moodle-db-password "..." \
-  --osticket-db-password "..." \
-  --osticket-install-secret "..." \
-  --osticket-admin-password "..."
-```
-
-Destroy in reverse order:
-
-```bash
-./scripts/destroy-landing-zones.sh --aws-region ap-southeast-1
-```
+- `terraform/lz0-storage/` - Level 0 foundation/storage/audit resources.
+- `terraform/lz1-network/` - Level 1 VPC, subnets, security groups, and VPN.
+- `terraform/lz2-orchestration/` - Level 2 EKS, RDS, EFS, ALB, DNS, WAF, monitoring, and secrets.
+- `terraform/modules/` - Shared Terraform modules used by the landing zones.
+- `k8s/` - Source Kubernetes manifests with placeholders.
+- `k8s-rendered/` - Rendered manifests for ArgoCD.
+- `argocd/` - ArgoCD Application definition.
+- `scripts/` - Landing-zone apply/destroy, Kubernetes render/apply, bootstrap, VPN, and ArgoCD helpers.
 
 ## Prerequisites
+
 Install and configure:
 
-1. `aws` CLI (authenticated to your AWS account)
-2. `terraform`
-3. `kubectl`
-4. `bash` (Git Bash/WSL/macOS/Linux)
-5. `jq`, `perl` (required by scripts)
-6. `docker` / Docker Desktop (required for Odoo image push in rebuild flow)
+1. `aws` CLI authenticated to the target AWS account.
+2. `terraform`.
+3. `kubectl`.
+4. `bash` such as Git Bash, WSL, macOS, or Linux shell.
+5. `jq` and `perl`.
+6. Docker only if you need to build/push a new Odoo image.
 
-Validate quickly:
+Validate:
 
 ```bash
 aws sts get-caller-identity
@@ -57,128 +38,87 @@ terraform -version
 kubectl version --client
 ```
 
-## Quick Start (From Scratch)
+## One-Shot Local Deployment
 
-### 1. (Optional) Tear Down Existing Stack First
-
-```bash
-./scripts/destroy-everything.sh
-```
-
-### 2. Deploy Or Rebuild Automatically (Recommended)
-
-This is the default workflow now. It will:
-- check whether infra is already up,
-- if up: deploy/re-apply Kubernetes apps,
-- if down: rebuild from scratch.
+The current local deployment entry point is:
 
 ```bash
-./scripts/deploy-or-rebuild.sh \
-  --skip-image-push \
-  --aws-region ap-southeast-1
+./scripts/apply-landing-zones.sh \
+  --aws-region ap-southeast-1 \
+  --odoo-db-password "$ODOO_DB_PASSWORD" \
+  --moodle-db-password "$MOODLE_DB_PASSWORD" \
+  --osticket-db-password "$OSTICKET_DB_PASSWORD" \
+  --osticket-install-secret "$INSTALL_SECRET" \
+  --osticket-admin-password "$ADMIN_PASSWORD"
 ```
 
-If `--skip-image-push` is set and no `--target-image` is provided, the script auto-resolves the latest tagged image from ECR repo `esm/odoo17`.
+This runs, in order:
 
-If you want to force a full rebuild path directly, use:
+1. Terraform Level 0: storage/foundation/audit.
+2. Terraform Level 1: network and VPN.
+3. Terraform Level 2: platform and application infrastructure.
+4. Kubernetes manifest render/apply through `deploy-k8s-apps.sh`.
+5. Bootstrap through `deploy-odoo-image-to-eks.sh` using the existing ECR image.
+
+Use these flags when you need a partial run:
 
 ```bash
-./scripts/rebuild-from-scratch.sh \
-  --skip-image-push \
-  --target-image "<your-ecr-image:tag>"
+./scripts/apply-landing-zones.sh --skip-k8s-apps ...
+./scripts/apply-landing-zones.sh --skip-bootstrap ...
 ```
 
-If you want the direct Odoo deploy/bootstrap script instead of the wrapper:
+## Teardown
+
+Use the landing-zone destroy wrapper:
 
 ```bash
-./scripts/deploy-odoo-image-to-eks.sh \
-  --skip-image-push \
-  --target-image "<your-ecr-image:tag>" \
-  --provision-infra
+./scripts/destroy-landing-zones.sh --aws-region ap-southeast-1
 ```
 
-### 3. Deploy Infra + Kubernetes Apps (Direct Script)
+This cleans Kubernetes resources first, then destroys Level 2, Level 1, and Level 0 in reverse dependency order.
 
-Use direct DB passwords:
+## Outputs
 
-```bash
-./scripts/deploy-k8s-apps.sh \
-  --provision-infra \
-  --odoo-db-password "OdooPassword" \
-  --moodle-db-password "MoodlePassword" \
-  --osticket-db-password "MoodlePassword"
-```
-
-Or use AWS Secrets Manager IDs:
-
-```bash
-./scripts/deploy-k8s-apps.sh \
-  --provision-infra \
-  --odoo-secret-id "esm/prod/odoo-db-password" \
-  --moodle-secret-id "esm/prod/moodle-db-password" \
-  --osticket-secret-id "esm/prod/osticket-db-password"
-```
-
-### 4. Get Endpoints
+After apply:
 
 ```bash
 terraform -chdir=terraform/lz2-orchestration output application_access_urls
+terraform -chdir=terraform/lz2-orchestration output -raw public_alb_dns_name
 ```
 
-### 5. Generate VPN Profile (Internal Access)
+## VPN Profile
+
+Generate a fresh VPN profile after every full rebuild because VPN endpoint/cert values can change:
 
 ```bash
 ./scripts/generate-vpn-profile.sh --output "$HOME/Downloads/esm-vpn-config-fixed.ovpn"
 ```
 
-Import the generated `.ovpn` into AWS VPN Client, connect, then access internal hosts.
-
-## Day-2 Operations
-
-### Redeploy Kubernetes manifests after changes
+Import the `.ovpn` into AWS VPN Client, connect, then test internal hosts:
 
 ```bash
-./scripts/deploy-or-rebuild.sh --aws-region ap-southeast-1
+curl -I http://odoo.internal.esm.local/
+curl -I http://moodle.internal.esm.local/
+curl -I http://osticket.internal.esm.local/
 ```
 
-### Sync K8s secrets from AWS Secrets Manager
+## ArgoCD Flow
+
+ArgoCD watches `k8s-rendered/`, not `k8s/`, because the raw `k8s/` manifests contain placeholders for AWS outputs such as ALB groups, RDS endpoints, EFS IDs, image references, and secrets.
+
+Typical ArgoCD preparation:
 
 ```bash
-./scripts/sync-k8s-secrets-from-aws.sh \
-  --region ap-southeast-1 \
-  --odoo-secret-id esm/prod/odoo-db-password \
-  --moodle-secret-id esm/prod/moodle-db-password \
-  --osticket-secret-id esm/prod/osticket-db-password \
-  --osticket-install-secret "put-a-long-random-string-here-please-change-me" \
-  --osticket-admin-password "ChangeThisAdminPassword123!"
+./scripts/install-argocd.sh --aws-region ap-southeast-1
+./scripts/render-k8s-for-argocd.sh --aws-region ap-southeast-1
+kubectl apply -f argocd/application.yaml
 ```
 
-## Teardown
-
-Full cleanup:
-
-```bash
-./scripts/destroy-everything.sh
-```
-
-Infra-only cleanup:
-
-```bash
-./scripts/destroy-everything.sh --skip-k8s
-```
-
-K8s-only cleanup:
-
-```bash
-./scripts/destroy-everything.sh --skip-terraform
-```
+Commit and push `k8s-rendered/` changes for ArgoCD to reconcile from Git.
 
 ## Notes
 
-- Use `scripts/deploy-k8s-apps.sh` (not raw `kubectl apply -k k8s`) because manifests contain placeholders and must be rendered first.
-- osTicket K8s rendering now follows the same env contract as `docker-compose-osTicket.yaml` (image, install/admin settings, DB settings).
-- `scripts/deploy-k8s-apps.sh` reads `.env` defaults for osTicket keys (`INSTALL_*`, `ADMIN_*`, `CRON_INTERVAL`) unless overridden via CLI flags.
-- `scripts/rebuild-from-scratch.sh` calls `destroy-everything.sh` then `deploy-odoo-image-to-eks.sh --provision-infra`.
-- If `OSTICKET_DB_USER` is `moodle_admin`, deploy scripts hard-enforce osTicket to use the Moodle DB password to prevent secret drift.
-- If you destroy/recreate often, endpoints and VPN configuration can change. Re-generate VPN profile after each fresh create.
-- For school demo cost control: destroy stack immediately when not in use.
+- Do not apply raw `k8s/` directly with `kubectl apply -k k8s`; use the render/apply scripts.
+- `.env` is for local convenience only. Do not commit secrets.
+- The Terraform backend S3 bucket is intentionally kept outside normal teardown.
+- Destroy demo stacks when not in use to control AWS cost.

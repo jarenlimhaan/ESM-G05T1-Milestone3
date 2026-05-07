@@ -1,12 +1,10 @@
 ﻿# Deployment Runbook
 
-This document is the step-by-step runbook for creating and destroying the full stack safely.
+This runbook uses the landing-zone deployment flow. The old single Terraform root and rebuild wrapper flow has been removed.
 
-## 1) Initial Setup
+## 1. Initial Setup
 
-1. Configure AWS credentials/profile.
-2. Ensure region is correct (`ap-southeast-1` unless you changed Terraform vars).
-3. Confirm tooling:
+Configure AWS credentials/profile and verify required tools:
 
 ```bash
 aws sts get-caller-identity
@@ -14,45 +12,33 @@ terraform -version
 kubectl version --client
 ```
 
-## 2) Fresh Deployment
+Default region is `ap-southeast-1`.
 
-### Recommended: one-command rebuild
+## 2. Fresh Deployment
 
-```bash
-./scripts/rebuild-from-scratch.sh
-```
-
-This runs:
-- `destroy-everything.sh` (unless `--skip-destroy`),
-- infra provisioning,
-- Odoo image push to ECR,
-- k8s deploy,
-- Odoo bootstrap (DB restore/filestore/module upgrade),
-- Moodle DB self-heal check.
-
-### Option A: Deploy with inline passwords
+Run the full landing-zone apply:
 
 ```bash
-./scripts/deploy-k8s-apps.sh \
-  --provision-infra \
-  --odoo-db-password "OdooPassword" \
-  --moodle-db-password "MoodlePassword" \
-  --osticket-db-password "MoodlePassword"
+./scripts/apply-landing-zones.sh \
+  --aws-region ap-southeast-1 \
+  --odoo-db-password "$ODOO_DB_PASSWORD" \
+  --moodle-db-password "$MOODLE_DB_PASSWORD" \
+  --osticket-db-password "$OSTICKET_DB_PASSWORD" \
+  --osticket-install-secret "$INSTALL_SECRET" \
+  --osticket-admin-password "$ADMIN_PASSWORD"
 ```
 
-### Option B: Deploy with AWS Secrets Manager
+The script performs:
 
-```bash
-./scripts/deploy-k8s-apps.sh \
-  --provision-infra \
-  --odoo-secret-id "esm/prod/odoo-db-password" \
-  --moodle-secret-id "esm/prod/moodle-db-password" \
-  --osticket-secret-id "esm/prod/osticket-db-password"
-```
+1. `terraform apply` in `terraform/lz0-storage`.
+2. `terraform apply` in `terraform/lz1-network`.
+3. `terraform apply` in `terraform/lz2-orchestration`.
+4. Kubernetes manifest render/apply.
+5. Application bootstrap from existing image references/ECR.
 
-## 3) Post-Deploy Verification
+## 3. Post-Deploy Verification
 
-### 3.1 Cluster health
+Cluster and pods:
 
 ```bash
 kubectl get nodes
@@ -63,95 +49,65 @@ kubectl get pods -n moodle-private
 kubectl get pods -n osticket-private
 ```
 
-### 3.2 Endpoints output
+Application endpoints:
 
 ```bash
 terraform -chdir=terraform/lz2-orchestration output application_access_urls
+curl -I "http://$(terraform -chdir=terraform/lz2-orchestration output -raw public_alb_dns_name)/"
 ```
 
-### 3.3 VPN for internal apps
+VPN/internal access:
 
 ```bash
 ./scripts/generate-vpn-profile.sh --output "$HOME/Downloads/esm-vpn-config-fixed.ovpn"
 ```
 
-Import profile into AWS VPN Client and connect.
-
-### 3.4 Connectivity checks
+After connecting VPN:
 
 ```bash
-curl -I "http://$(terraform -chdir=terraform/lz2-orchestration output -raw public_alb_dns_name)/"
+curl -I http://odoo.internal.esm.local/
+curl -I http://moodle.internal.esm.local/
+curl -I http://osticket.internal.esm.local/
 ```
 
-Internal examples (after VPN connect):
+## 4. ArgoCD
+
+Install ArgoCD and apply the Application when the EKS cluster exists:
 
 ```bash
-curl -I "http://odoo.internal.esm.local/"
-curl -I "http://moodle.internal.esm.local/"
-curl -I "http://osticket.internal.esm.local/"
+./scripts/install-argocd.sh --aws-region ap-southeast-1
+./scripts/render-k8s-for-argocd.sh --aws-region ap-southeast-1
+kubectl apply -f argocd/application.yaml
+kubectl get applications.argoproj.io -n argocd
 ```
 
-## 4) Common Troubleshooting
+ArgoCD watches `k8s-rendered/`, so regenerate and commit that directory after infrastructure output changes.
 
-### Placeholder values appear in live deployment
+## 5. Troubleshooting
 
-Cause: raw `kubectl apply -k k8s` was used.
-Fix: re-run `scripts/deploy-k8s-apps.sh` so placeholders are rendered.
-
-### Moodle shows "Config table does not contain the version"
-
-Cause: partial/failed Moodle install left DB incomplete.
-Fix: `deploy-k8s-apps.sh` now auto-detects this and recreates `moodledb` then restarts Moodle.
-
-### VPN connects but internal domain is unreachable
-
-1. Re-generate profile after recreate.
-2. Reconnect VPN.
-3. Verify private DNS resolves:
+Placeholder values appear in live deployment:
 
 ```bash
-nslookup odoo.internal.esm.local
+./scripts/deploy-k8s-apps.sh --terraform-dir terraform/lz2-orchestration --aws-region ap-southeast-1
 ```
 
-### osTicket/Moodle/Odoo pods not ready
+Pod not ready:
 
 ```bash
 kubectl describe pod -n <namespace> <pod-name>
 kubectl logs -n <namespace> <pod-name> --tail=200
 ```
 
-## 5) Safe Teardown (Cost Control)
-
-Recommended full cleanup:
+Public Odoo health:
 
 ```bash
-./scripts/destroy-everything.sh
+curl -I "http://$(terraform -chdir=terraform/lz2-orchestration output -raw public_alb_dns_name)/"
 ```
 
-What it does:
-- deletes Kubernetes resources first (to reduce ALB/NLB dependency issues)
-- optionally removes known RDS final snapshots
-- runs `terraform destroy -auto-approve`
-
-Optional flags:
+## 6. Teardown
 
 ```bash
-./scripts/destroy-everything.sh --skip-k8s
-./scripts/destroy-everything.sh --skip-terraform
-./scripts/destroy-everything.sh --skip-snapshot-cleanup
+./scripts/destroy-landing-zones.sh --aws-region ap-southeast-1
 ```
 
-## 6) Rebuild Later
-
-When you want to run demo again:
-
-```bash
-./scripts/rebuild-from-scratch.sh \
-  --odoo-db-password "OdooPassword" \
-  --moodle-db-password "MoodlePassword" \
-  --osticket-db-password "MoodlePassword"
-```
-
-This wrapper tears down first, then deploys infra + apps.
-
-If you use this wrapper, Docker must be available for Odoo image push.
+This removes Kubernetes resources first, then destroys `lz2`, `lz1`, and `lz0`.
