@@ -39,4 +39,4 @@ secrets:
   adminPasswordSecretId: "esm/prod/osticket-admin-password"
 
 autoscaling:
-  enabled: true   # ← change to false
+  enabled: false   # ← change to false
