@@ -438,8 +438,7 @@ locals {
     "sts",
     "ssm",
     "ec2messages",
-    "ssmmessages",
-    "secretsmanager"
+    "ssmmessages"
   ])
 }
 

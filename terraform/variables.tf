@@ -125,7 +125,7 @@ variable "eks_node_count_min" {
 variable "eks_node_count_max" {
   description = "Maximum number of EKS nodes"
   type        = number
-  default     = 3
+  default     = 5
 }
 
 variable "eks_node_count_desired" {

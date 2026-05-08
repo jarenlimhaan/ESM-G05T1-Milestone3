@@ -86,7 +86,7 @@ jobs:
           terraform plan -lock=false -input=false \
             -var="odoo_db_password=placeholder" \
             -var="moodle_db_password=placeholder" \
-            -var="moodle_admin_password=placeholder" \
+            -var="osticket_db_password=placeholder" \
             -var="osticket_install_secret=placeholder" \
             -var="osticket_admin_password=placeholder" \
             -no-color 2>&1 | tee /tmp/tfplan.txt
@@ -170,6 +170,6 @@ jobs:
           terraform apply -auto-approve -input=false \
             -var="odoo_db_password=${{ secrets.ODOO_DB_PASSWORD }}" \
             -var="moodle_db_password=${{ secrets.MOODLE_DB_PASSWORD }}" \
-            -var="moodle_admin_password=${{ secrets.MOODLE_ADMIN_PASSWORD }}" \
+            -var="osticket_db_password=${{ secrets.OSTICKET_DB_PASSWORD }}" \
             -var="osticket_install_secret=${{ secrets.OSTICKET_INSTALL_SECRET }}" \
             -var="osticket_admin_password=${{ secrets.OSTICKET_ADMIN_PASSWORD }}"
