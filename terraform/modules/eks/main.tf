@@ -369,56 +369,6 @@ resource "aws_eks_node_group" "main" {
 # This is typically managed by EKS, but can be customized here
 
 # ==============================================================================
-# EBS CSI Driver Addon
-# ==============================================================================
-# Enable EBS CSI driver for dynamic volume provisioning (optional)
-
-resource "aws_eks_addon" "ebs_csi_driver" {
-  cluster_name                = aws_eks_cluster.main.name
-  addon_name                  = "aws-ebs-csi-driver"
-  addon_version               = "v1.32.0-eksbuild.1" # Update based on cluster version
-  service_account_role_arn    = aws_iam_role.ebs_csi_driver.arn
-  resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "OVERWRITE"
-
-  tags = var.common_tags
-
-  depends_on = [
-    aws_eks_node_group.main,
-    aws_iam_role_policy_attachment.ebs_csi_driver_policy
-  ]
-}
-
-resource "aws_iam_role" "ebs_csi_driver" {
-  name = "${var.project_name}-${var.environment}-ebs-csi-driver-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Effect = "Allow"
-        Principal = {
-          Federated = aws_iam_openid_connect_provider.oidc_provider.arn
-        }
-        Condition = {
-          StringEquals = {
-            "${replace(aws_iam_openid_connect_provider.oidc_provider.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:ebs-csi-controller-sa"
-          }
-        }
-      }
-    ]
-  })
-
-  tags = var.common_tags
-}
-
-resource "aws_iam_role_policy_attachment" "ebs_csi_driver_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
-  role       = aws_iam_role.ebs_csi_driver.name
-}
-
-# ==============================================================================
 # EFS CSI Driver Addon
 # ==============================================================================
 # Enable EFS CSI driver for mounting EFS file systems

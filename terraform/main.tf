@@ -545,50 +545,6 @@ resource "kubernetes_namespace" "osticket_private" {
   depends_on = [module.eks]
 }
 
-resource "kubernetes_secret" "odoo_db_odoo_public" {
-  metadata {
-    name      = "odoo-db"
-    namespace = kubernetes_namespace.odoo_public.metadata[0].name
-  }
-  data = {
-    password = aws_secretsmanager_secret_version.odoo_db_password.secret_string
-  }
-}
-
-resource "kubernetes_secret" "odoo_db_odoo_private" {
-  metadata {
-    name      = "odoo-db"
-    namespace = kubernetes_namespace.odoo_private.metadata[0].name
-  }
-  data = {
-    password = aws_secretsmanager_secret_version.odoo_db_password.secret_string
-  }
-}
-
-resource "kubernetes_secret" "moodle_db" {
-  metadata {
-    name      = "moodle-db"
-    namespace = kubernetes_namespace.moodle_private.metadata[0].name
-  }
-  data = {
-    password       = aws_secretsmanager_secret_version.moodle_db_password.secret_string
-    admin_password = var.moodle_admin_password
-  }
-}
-
-resource "kubernetes_secret" "osticket_db" {
-  metadata {
-    name      = "osticket-db"
-    namespace = kubernetes_namespace.osticket_private.metadata[0].name
-  }
-  data = {
-    # osTicket shares the Moodle MySQL RDS instance — use the same master credential.
-    password       = aws_secretsmanager_secret_version.moodle_db_password.secret_string
-    install_secret = var.osticket_install_secret
-    admin_password = var.osticket_admin_password
-  }
-}
-
 # ==============================================================================
 # IRSA — IAM Roles for Service Accounts
 # ==============================================================================

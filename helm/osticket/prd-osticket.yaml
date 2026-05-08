@@ -17,7 +17,7 @@ persistence:
   efsId: "fs-09adfe24a1c9304eb"
   accessPointId: "fsap-0c2713097f9e21086"
 
-replicaCount: 1
+replicaCount: 2
 
 osticket:
   installName: "ESM Enterprise Support"
@@ -37,3 +37,6 @@ secrets:
   dbPasswordSecretId: "esm/prod/moodle-db-password"
   installSecretId: "esm/prod/osticket-install-secret"
   adminPasswordSecretId: "esm/prod/osticket-admin-password"
+
+autoscaling:
+  enabled: false   # ← change to false
