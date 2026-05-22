@@ -1,21 +1,61 @@
-name: k8s Lint
+name: Helm Lint
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "k8s/**"
-      - "k8s-rendered/**"
+      - "helm/**"
       - ".kube-linter.yaml"
       - ".github/workflows/k8s-lint.yml"
 
 jobs:
-  kube-linter:
-    name: kube-linter
+  helm-lint:
+    name: helm lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint odoo (private)
+        run: |
+          helm lint helm/odoo \
+            --values helm/odoo/values.yaml \
+            --values helm/odoo/prd-odoo-private.yaml \
+            --strict
+
+      - name: Lint odoo (public)
+        run: |
+          helm lint helm/odoo \
+            --values helm/odoo/values.yaml \
+            --values helm/odoo/prd-odoo-public.yaml \
+            --strict
+
+      - name: Lint moodle
+        run: |
+          helm lint helm/moodle \
+            --values helm/moodle/values.yaml \
+            --values helm/moodle/prd-moodle.yaml \
+            --strict
+
+      - name: Lint osticket
+        run: |
+          helm lint helm/osticket \
+            --values helm/osticket/values.yaml \
+            --values helm/osticket/prd-osticket.yaml \
+            --strict
+
+  kube-linter:
+    name: kube-linter (rendered)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
 
       - name: Install kube-linter
         run: |
@@ -25,12 +65,25 @@ jobs:
           sudo mv kube-linter /usr/local/bin/kube-linter
           kube-linter version
 
-      - name: Run kube-linter
+      - name: Render Helm charts
         run: |
-          kube-linter lint k8s k8s-rendered \
-            --config .kube-linter.yaml \
-            --ignore-paths k8s/kustomization.yaml \
-            --ignore-paths k8s/README.md \
-            --ignore-paths k8s/secrets.yaml \
-            --ignore-paths k8s-rendered/kustomization.yaml \
-            --ignore-paths k8s-rendered/README.md
+          mkdir -p /tmp/rendered
+          helm template odoo-private helm/odoo \
+            --values helm/odoo/values.yaml \
+            --values helm/odoo/prd-odoo-private.yaml \
+            > /tmp/rendered/odoo-private.yaml
+          helm template odoo-public helm/odoo \
+            --values helm/odoo/values.yaml \
+            --values helm/odoo/prd-odoo-public.yaml \
+            > /tmp/rendered/odoo-public.yaml
+          helm template moodle helm/moodle \
+            --values helm/moodle/values.yaml \
+            --values helm/moodle/prd-moodle.yaml \
+            > /tmp/rendered/moodle.yaml
+          helm template osticket helm/osticket \
+            --values helm/osticket/values.yaml \
+            --values helm/osticket/prd-osticket.yaml \
+            > /tmp/rendered/osticket.yaml
+
+      - name: Run kube-linter
+        run: kube-linter lint /tmp/rendered --config .kube-linter.yaml

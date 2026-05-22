@@ -1,20 +1,22 @@
-name: k8s Validate
+name: Helm Validate
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "k8s/**"
-      - "k8s-rendered/**"
+      - "helm/**"
       - ".github/workflows/k8s-validate.yml"
 
 jobs:
   kubeconform:
-    name: kubeconform
+    name: kubeconform (rendered)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
 
       - name: Install kubeconform
         run: |
@@ -22,15 +24,35 @@ jobs:
             https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz
           tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
 
-      - name: Validate manifests (k8s/ and k8s-rendered/)
+      - name: Render Helm charts
         run: |
-          find k8s k8s-rendered -name "*.yaml" | \
+          mkdir -p /tmp/rendered
+          helm template odoo-private helm/odoo \
+            --values helm/odoo/values.yaml \
+            --values helm/odoo/prd-odoo-private.yaml \
+            > /tmp/rendered/odoo-private.yaml
+          helm template odoo-public helm/odoo \
+            --values helm/odoo/values.yaml \
+            --values helm/odoo/prd-odoo-public.yaml \
+            > /tmp/rendered/odoo-public.yaml
+          helm template moodle helm/moodle \
+            --values helm/moodle/values.yaml \
+            --values helm/moodle/prd-moodle.yaml \
+            > /tmp/rendered/moodle.yaml
+          helm template osticket helm/osticket \
+            --values helm/osticket/values.yaml \
+            --values helm/osticket/prd-osticket.yaml \
+            > /tmp/rendered/osticket.yaml
+
+      - name: Validate manifests with kubeconform
+        run: |
+          find /tmp/rendered -name "*.yaml" | \
             xargs kubeconform \
               -strict \
               -ignore-missing-schemas \
               -summary
 
-      - name: Check HPA minReplicas is not zero
+      - name: Check HPA minReplicas >= 1
         run: |
           failed=0
           while IFS= read -r file; do
@@ -40,27 +62,5 @@ jobs:
                 failed=1
               fi
             done < <(grep 'minReplicas:' "$file" | awk '{print $2}')
-          done < <(find k8s k8s-rendered -name "*.yaml" | xargs grep -l 'kind: HorizontalPodAutoscaler' 2>/dev/null)
+          done < <(find /tmp/rendered -name "*.yaml" | xargs grep -l 'kind: HorizontalPodAutoscaler' 2>/dev/null)
           exit $failed
-
-  rendered-in-sync:
-    name: Check k8s-rendered is not stale
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Fail if k8s/ changed without k8s-rendered/ update
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          k8s_changed=$(git diff --name-only "${BASE_SHA}..${HEAD_SHA}" -- k8s/ | wc -l)
-          rendered_changed=$(git diff --name-only "${BASE_SHA}..${HEAD_SHA}" -- k8s-rendered/ | wc -l)
-          if [ "$k8s_changed" -gt 0 ] && [ "$rendered_changed" -eq 0 ]; then
-            echo "::error::k8s/ was changed but k8s-rendered/ was not updated."
-            echo "Run ./scripts/render-k8s-for-argocd.sh locally and commit the output."
-            exit 1
-          fi
