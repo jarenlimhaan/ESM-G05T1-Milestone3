@@ -387,3 +387,27 @@ variable "additional_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "state_bucket_name" {
+  description = "S3 bucket name that stores landing zone state files"
+  type        = string
+  default     = "esm-enterprise-prod-tf-state-jar"
+}
+
+variable "state_region" {
+  description = "AWS region of the remote terraform state bucket"
+  type        = string
+  default     = "ap-southeast-1"
+}
+
+variable "lz0_state_key" {
+  description = "State key for Level 0 stack"
+  type        = string
+  default     = "prod/lz0-storage.tfstate"
+}
+
+variable "lz1_state_key" {
+  description = "State key for Level 1 stack"
+  type        = string
+  default     = "prod/lz1-network.tfstate"
+}

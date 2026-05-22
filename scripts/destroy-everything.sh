@@ -5,14 +5,18 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/destroy-everything.sh \
-    [--terraform-dir terraform] \
+    [--terraform-dir terraform/lz2-orchestration] \
+    [--k8s-dir k8s] \
+    [--namespace odoo-public] \
     [--skip-k8s] \
     [--skip-terraform] \
     [--skip-snapshot-cleanup] \
     [--skip-backup-cleanup]
 
 Options:
-  --terraform-dir         Terraform directory (default: terraform).
+  --terraform-dir         Terraform directory (default: terraform/lz2-orchestration).
+  --k8s-dir               Kubernetes manifests directory (default: k8s).
+  --namespace             Kubernetes namespace (legacy option, default: odoo-public).
   --skip-k8s              Skip Kubernetes cleanup.
   --skip-terraform        Skip Terraform destroy.
   --skip-snapshot-cleanup Skip pre-delete of known final snapshot names.
@@ -31,7 +35,9 @@ require_cmd() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-TERRAFORM_DIR="${REPO_ROOT}/terraform"
+TERRAFORM_DIR="${REPO_ROOT}/terraform/lz2-orchestration"
+K8S_DIR="${REPO_ROOT}/k8s"
+NAMESPACE="odoo-public"
 SKIP_K8S="false"
 SKIP_TERRAFORM="false"
 SKIP_SNAPSHOT_CLEANUP="false"

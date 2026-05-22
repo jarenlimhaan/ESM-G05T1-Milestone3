@@ -13,6 +13,10 @@
 data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
+locals {
+  dashboard_name = "${var.project_name}-${var.environment}-dashboard"
+}
+
 # ==============================================================================
 # SNS Topic for Alerts
 # ==============================================================================
@@ -548,4 +552,326 @@ resource "aws_budgets_budget" "monthly_cost" {
     name   = "LinkedAccount"
     values = [data.aws_caller_identity.current.account_id]
   }
+}
+
+# ==============================================================================
+# CloudWatch Dashboard
+# ==============================================================================
+# Single-pane dashboard for core service health metrics and alarm status.
+
+resource "aws_cloudwatch_dashboard" "main" {
+  dashboard_name = local.dashboard_name
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "alarm"
+        x      = 0
+        y      = 0
+        width  = 24
+        height = 6
+        properties = {
+          title = "Alarm Status"
+          alarms = concat(
+            aws_cloudwatch_metric_alarm.rds_cpu_high[*].arn,
+            aws_cloudwatch_metric_alarm.rds_storage_low[*].arn,
+            aws_cloudwatch_metric_alarm.rds_connection_high[*].arn,
+            aws_cloudwatch_metric_alarm.efs_burst_credit_low[*].arn,
+            aws_cloudwatch_metric_alarm.efs_connection_high[*].arn,
+            aws_cloudwatch_metric_alarm.moodle_pod_cpu_high[*].arn,
+            aws_cloudwatch_metric_alarm.moodle_pod_memory_high[*].arn,
+            aws_cloudwatch_metric_alarm.public_alb_5xx_rate_high[*].arn,
+            aws_cloudwatch_metric_alarm.internal_alb_5xx_rate_high[*].arn,
+            aws_cloudwatch_metric_alarm.odoo_public_unhealthy_hosts[*].arn,
+            aws_cloudwatch_metric_alarm.moodle_internal_unhealthy_hosts[*].arn,
+            aws_cloudwatch_metric_alarm.eks_node_cpu_high[*].arn,
+            aws_cloudwatch_metric_alarm.eks_node_memory_high[*].arn,
+            [for alarm in aws_cloudwatch_metric_alarm.pod_restarts_high : alarm.arn],
+            [for alarm in aws_cloudwatch_metric_alarm.odoo_pod_cpu_high : alarm.arn]
+          )
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "RDS CPU Utilization (%)"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 300
+          metrics = [
+            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", var.odoo_rds_id, { label = "Odoo PostgreSQL" }],
+            [".", "CPUUtilization", "DBInstanceIdentifier", var.moodle_rds_id, { label = "Moodle/osTicket MySQL" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "RDS Free Storage Space (Bytes)"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 300
+          metrics = [
+            ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", var.odoo_rds_id, { label = "Odoo PostgreSQL" }],
+            [".", "FreeStorageSpace", "DBInstanceIdentifier", var.moodle_rds_id, { label = "Moodle/osTicket MySQL" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 12
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "RDS Database Connections"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 300
+          metrics = [
+            ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", var.odoo_rds_id, { label = "Odoo PostgreSQL" }],
+            [".", "DatabaseConnections", "DBInstanceIdentifier", var.moodle_rds_id, { label = "Moodle/osTicket MySQL" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 12
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "EFS Burst Credit Balance (Bytes)"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 300
+          metrics = [
+            ["AWS/EFS", "BurstCreditBalance", "FileSystemId", var.efs_id, { label = "EFS Burst Credit" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 18
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "EFS Data Write IO (Bytes)"
+          view   = "timeSeries"
+          stat   = "Sum"
+          period = 300
+          metrics = [
+            ["AWS/EFS", "DataWriteIOBytes", "FileSystemId", var.efs_id, { label = "EFS DataWriteIOBytes" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 18
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "ALB Request Count"
+          view   = "timeSeries"
+          stat   = "Sum"
+          period = 300
+          metrics = [
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", var.public_alb_arn_suffix, { label = "Public ALB" }],
+            [".", "RequestCount", "LoadBalancer", var.internal_alb_arn_suffix, { label = "Internal ALB" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 24
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "ALB Target 5XX Count"
+          view   = "timeSeries"
+          stat   = "Sum"
+          period = 300
+          metrics = [
+            ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "LoadBalancer", var.public_alb_arn_suffix, { label = "Public ALB 5XX" }],
+            [".", "HTTPCode_Target_5XX_Count", "LoadBalancer", var.internal_alb_arn_suffix, { label = "Internal ALB 5XX" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 24
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "ALB UnHealthy Host Count"
+          view   = "timeSeries"
+          stat   = "Maximum"
+          period = 300
+          metrics = [
+            ["AWS/ApplicationELB", "UnHealthyHostCount", "LoadBalancer", var.public_alb_arn_suffix, "TargetGroup", var.public_odoo_target_group_arn_suffix, { label = "Public Odoo TG" }],
+            [".", "UnHealthyHostCount", "LoadBalancer", var.internal_alb_arn_suffix, "TargetGroup", var.internal_moodle_target_group_arn_suffix, { label = "Internal Moodle TG" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 30
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "Moodle Pod CPU Utilization (%)"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 60
+          metrics = [
+            [{ expression = "SEARCH('{ContainerInsights,ClusterName,Namespace,PodName} MetricName=\"pod_cpu_utilization\" ClusterName=\"${var.eks_cluster_name}\" Namespace=\"${var.moodle_namespace}\"', 'Average', 60)", label = "Moodle Pods CPU" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 30
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "Moodle Pod Memory Utilization (%)"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 60
+          metrics = [
+            [{ expression = "SEARCH('{ContainerInsights,ClusterName,Namespace,PodName} MetricName=\"pod_memory_utilization\" ClusterName=\"${var.eks_cluster_name}\" Namespace=\"${var.moodle_namespace}\"', 'Average', 60)", label = "Moodle Pods Memory" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 36
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "Odoo Pod CPU Utilization (%)"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 60
+          metrics = [
+            [{ expression = "SEARCH('{ContainerInsights,ClusterName,Namespace,PodName} MetricName=\"pod_cpu_utilization\" ClusterName=\"${var.eks_cluster_name}\" Namespace=\"odoo-public\"', 'Average', 60)", label = "odoo-public CPU" }],
+            [{ expression = "SEARCH('{ContainerInsights,ClusterName,Namespace,PodName} MetricName=\"pod_cpu_utilization\" ClusterName=\"${var.eks_cluster_name}\" Namespace=\"odoo-private\"', 'Average', 60)", label = "odoo-private CPU" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 36
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "Pod Restarts by Namespace"
+          view   = "timeSeries"
+          stat   = "Sum"
+          period = 60
+          metrics = [
+            [{ expression = "SEARCH('{ContainerInsights,ClusterName,Namespace,PodName} MetricName=\"pod_number_of_container_restarts\" ClusterName=\"${var.eks_cluster_name}\" Namespace=\"odoo-public\"', 'Average', 60)", label = "odoo-public restarts" }],
+            [{ expression = "SEARCH('{ContainerInsights,ClusterName,Namespace,PodName} MetricName=\"pod_number_of_container_restarts\" ClusterName=\"${var.eks_cluster_name}\" Namespace=\"odoo-private\"', 'Average', 60)", label = "odoo-private restarts" }],
+            [{ expression = "SEARCH('{ContainerInsights,ClusterName,Namespace,PodName} MetricName=\"pod_number_of_container_restarts\" ClusterName=\"${var.eks_cluster_name}\" Namespace=\"moodle-private\"', 'Average', 60)", label = "moodle-private restarts" }],
+            [{ expression = "SEARCH('{ContainerInsights,ClusterName,Namespace,PodName} MetricName=\"pod_number_of_container_restarts\" ClusterName=\"${var.eks_cluster_name}\" Namespace=\"osticket-private\"', 'Average', 60)", label = "osticket-private restarts" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 42
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "EKS Node CPU Utilization (%)"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 60
+          metrics = [
+            [{ expression = "SEARCH('{ContainerInsights,ClusterName,NodeName} MetricName=\"node_cpu_utilization\" ClusterName=\"${var.eks_cluster_name}\"', 'Average', 60)", label = "Node CPU" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 42
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "EKS Node Memory Utilization (%)"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 60
+          metrics = [
+            [{ expression = "SEARCH('{ContainerInsights,ClusterName,NodeName} MetricName=\"node_memory_utilization\" ClusterName=\"${var.eks_cluster_name}\"', 'Average', 60)", label = "Node Memory" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 48
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "AWS Backup Jobs Failed"
+          view   = "timeSeries"
+          stat   = "Sum"
+          period = 300
+          metrics = [
+            ["AWS/Backup", "NumberOfBackupJobsFailed", { label = "Backup Jobs Failed" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 48
+        width  = 12
+        height = 6
+        properties = {
+          region = data.aws_region.current.name
+          title  = "Application Log Ingestion"
+          view   = "timeSeries"
+          stat   = "Sum"
+          period = 300
+          metrics = [
+            ["AWS/Logs", "IncomingBytes", "LogGroupName", aws_cloudwatch_log_group.main.name, { label = "App Log Group Bytes" }]
+          ]
+        }
+      }
+    ]
+  })
 }
