@@ -49,14 +49,6 @@ while [[ $# -gt 0 ]]; do
       TERRAFORM_DIR="$2"
       shift 2
       ;;
-    --k8s-dir)
-      K8S_DIR="$2"
-      shift 2
-      ;;
-    --namespace)
-      NAMESPACE="$2"
-      shift 2
-      ;;
     --skip-k8s)
       SKIP_K8S="true"
       shift
@@ -88,9 +80,6 @@ done
 if [[ "${TERRAFORM_DIR}" != /* ]]; then
   TERRAFORM_DIR="${REPO_ROOT}/${TERRAFORM_DIR}"
 fi
-if [[ "${K8S_DIR}" != /* ]]; then
-  K8S_DIR="${REPO_ROOT}/${K8S_DIR}"
-fi
 
 require_cmd terraform
 require_cmd aws
@@ -114,12 +103,16 @@ if [[ "${SKIP_K8S}" != "true" ]]; then
     aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null 2>&1 || true
   fi
 
-  # Explicitly remove LB services to avoid orphan NLB dependencies at destroy time.
+  # Remove Ingresses first so the ALB controller can deprovision the load balancers
+  # before Terraform destroys the VPC/SGs they depend on.
+  kubectl delete ingress odoo-private -n odoo-private --ignore-not-found >/dev/null 2>&1 || true
   kubectl delete ingress odoo-public -n odoo-public --ignore-not-found >/dev/null 2>&1 || true
-  kubectl delete ingress odoo-internal -n odoo-private --ignore-not-found >/dev/null 2>&1 || true
-  kubectl delete ingress moodle-internal -n moodle-private --ignore-not-found >/dev/null 2>&1 || true
-  kubectl delete ingress osticket-internal -n osticket-private --ignore-not-found >/dev/null 2>&1 || true
-  kubectl delete -k "${K8S_DIR}" --ignore-not-found=true >/dev/null 2>&1 || true
+  kubectl delete ingress moodle -n moodle-private --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete ingress osticket -n osticket-private --ignore-not-found >/dev/null 2>&1 || true
+  echo "Waiting 15s for ALB controller to deprovision load balancers..."
+  sleep 15
+  # Delete workload namespaces (removes all Helm-managed resources within them)
+  kubectl delete namespace odoo-private odoo-public moodle-private osticket-private --ignore-not-found >/dev/null 2>&1 || true
 fi
 
 if [[ "${SKIP_TERRAFORM}" == "true" ]]; then

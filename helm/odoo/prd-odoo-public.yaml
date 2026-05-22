@@ -1,0 +1,28 @@
+# ==============================================================================
+# Odoo Public — Production Overlay
+# ==============================================================================
+
+instance: "public"
+
+image:
+  repository: "990521646880.dkr.ecr.ap-southeast-1.amazonaws.com/esm/odoo17"  # run scripts/deploy-odoo-image-to-eks.sh first
+  tag: "17"
+
+service:
+  nodePort: 30080
+
+db:
+  host: "esm-enterprise-prod-odoo.c9asmcmsm7pz.ap-southeast-1.rds.amazonaws.com"
+  name: "odoodb"
+  user: "odoo_admin"
+
+persistence:
+  storageClassName: "efs-static-odoo-public"
+  efsId: "fs-09adfe24a1c9304eb"
+  accessPointId: "fsap-06046ef521f83b28d"
+
+serviceAccount:
+  irsaRoleArn: "arn:aws:iam::990521646880:role/esm-enterprise-prod-odoo-public-irsa"
+
+secrets:
+  dbPasswordSecretId: "esm/prod/odoo-db-password"

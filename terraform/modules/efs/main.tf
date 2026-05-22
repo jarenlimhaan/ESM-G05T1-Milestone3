@@ -45,21 +45,19 @@ resource "aws_efs_mount_target" "main" {
 }
 
 # ==============================================================================
-# EFS Access Point for Odoo
+# EFS Access Point for Odoo (Private instance)
 # ==============================================================================
-# Creates an access point with a specific path and permissions
-# This allows Odoo pods to mount only their designated directory
+# Internal-only Odoo instance — mounts /odoo on the shared EFS file system.
+# uid/gid 1000 matches the Odoo container user.
 
 resource "aws_efs_access_point" "odoo" {
   file_system_id = aws_efs_file_system.main.id
 
-  # POSIX user that owns the mount
   posix_user {
     uid = 1000
     gid = 1000
   }
 
-  # Root directory permissions
   root_directory {
     path = "/odoo"
     creation_info {
@@ -73,6 +71,38 @@ resource "aws_efs_access_point" "odoo" {
     var.common_tags,
     {
       Name        = "${var.project_name}-${var.environment}-odoo-access-point"
+      Application = "Odoo"
+    }
+  )
+}
+
+# ==============================================================================
+# EFS Access Point for Odoo (Public instance)
+# ==============================================================================
+# Internet-facing Odoo instance — mounts /odoo-public, isolated from /odoo.
+# Separate access point prevents the public instance from reading private data.
+
+resource "aws_efs_access_point" "odoo_public" {
+  file_system_id = aws_efs_file_system.main.id
+
+  posix_user {
+    uid = 1000
+    gid = 1000
+  }
+
+  root_directory {
+    path = "/odoo-public"
+    creation_info {
+      owner_uid   = 1000
+      owner_gid   = 1000
+      permissions = "0755"
+    }
+  }
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name        = "${var.project_name}-${var.environment}-odoo-public-access-point"
       Application = "Odoo"
     }
   )
@@ -107,6 +137,38 @@ resource "aws_efs_access_point" "moodle" {
     {
       Name        = "${var.project_name}-${var.environment}-moodle-access-point"
       Application = "Moodle"
+    }
+  )
+}
+
+# ==============================================================================
+# EFS Access Point for osTicket
+# ==============================================================================
+# osTicket stores uploaded attachments under /osticket.
+# uid/gid 33 matches www-data, the user the PHP/Apache container runs as.
+
+resource "aws_efs_access_point" "osticket" {
+  file_system_id = aws_efs_file_system.main.id
+
+  posix_user {
+    uid = 33
+    gid = 33
+  }
+
+  root_directory {
+    path = "/osticket"
+    creation_info {
+      owner_uid   = 33
+      owner_gid   = 33
+      permissions = "0755"
+    }
+  }
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name        = "${var.project_name}-${var.environment}-osticket-access-point"
+      Application = "osTicket"
     }
   )
 }

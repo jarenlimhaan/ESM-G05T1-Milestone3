@@ -32,7 +32,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TERRAFORM_DIR="${REPO_ROOT}/terraform/lz2-orchestration"
 CLUSTER_NAME=""
 AWS_REGION=""
-APP_FILE="${REPO_ROOT}/argocd/application.yaml"
+APP_FILE="${REPO_ROOT}/argocd/bootstrap.yaml"
 SKIP_APPLICATION="false"
 
 while [[ $# -gt 0 ]]; do

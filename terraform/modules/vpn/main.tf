@@ -188,7 +188,10 @@ resource "aws_ec2_client_vpn_network_association" "main" {
   client_vpn_endpoint_id = aws_ec2_client_vpn_endpoint.main.id
   subnet_id              = var.private_subnet_ids[count.index]
 
-  # Associate each subnet for high availability
+  timeouts {
+    create = "30m"
+    delete = "30m"
+  }
 }
 
 # ==============================================================================

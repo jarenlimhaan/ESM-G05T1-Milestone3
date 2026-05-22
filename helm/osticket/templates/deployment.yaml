@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      initContainers:
+        - name: create-db
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: MYSQL_HOST
+              value: {{ .Values.db.host | quote }}
+            - name: MYSQL_DATABASE
+              value: {{ .Values.db.name | quote }}
+            - name: MYSQL_USER
+              value: {{ .Values.db.user | quote }}
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: osticket-db
+                  key: password
+          command:
+            - php
+            - -r
+            - |
+              $h=getenv('MYSQL_HOST'); $u=getenv('MYSQL_USER'); $p=getenv('MYSQL_PASSWORD'); $db=getenv('MYSQL_DATABASE');
+              $c=new mysqli($h,$u,$p);
+              if($c->connect_error){die("Connect failed: ".$c->connect_error."\n");}
+              if(!$c->query("CREATE DATABASE IF NOT EXISTS `$db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")){die("Create DB failed: ".$c->error."\n");}
+              echo "Database '$db' ready.\n";
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      containers:
+        - name: osticket
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: {{ .Values.probes.readinessInitialDelay }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+            failureThreshold: {{ .Values.probes.failureThreshold }}
+          livenessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: {{ .Values.probes.livenessInitialDelay }}
+            periodSeconds: 20
+            failureThreshold: {{ .Values.probes.failureThreshold }}
+          env:
+            - name: MYSQL_HOST
+              value: {{ .Values.db.host | quote }}
+            - name: MYSQL_DATABASE
+              value: {{ .Values.db.name | quote }}
+            - name: MYSQL_USER
+              value: {{ .Values.db.user | quote }}
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: osticket-db
+                  key: password
+            - name: INSTALL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: osticket-db
+                  key: install_secret
+            - name: INSTALL_NAME
+              value: {{ .Values.osticket.installName | quote }}
+            - name: INSTALL_URL
+              value: {{ .Values.osticket.installUrl | quote }}
+            - name: INSTALL_EMAIL
+              value: {{ .Values.osticket.installEmail | quote }}
+            - name: ADMIN_FIRSTNAME
+              value: {{ .Values.osticket.adminFirstname | quote }}
+            - name: ADMIN_LASTNAME
+              value: {{ .Values.osticket.adminLastname | quote }}
+            - name: ADMIN_EMAIL
+              value: {{ .Values.osticket.adminEmail | quote }}
+            - name: ADMIN_USERNAME
+              value: {{ .Values.osticket.adminUsername | quote }}
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: osticket-db
+                  key: admin_password
+            - name: CRON_INTERVAL
+              value: {{ .Values.osticket.cronInterval | quote }}
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+            {{- if .Values.persistence.enabled }}
+            - name: osticket-data
+              mountPath: /var/www/html/upload
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-secrets
+        {{- if .Values.persistence.enabled }}
+        - name: osticket-data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-pvc
+        {{- end }}

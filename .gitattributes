@@ -1,0 +1,23 @@
+# Force LF line endings for all shell scripts regardless of platform.
+# Without this, Windows git (core.autocrlf=true) converts \n → \r\n on
+# checkout, causing bash to fail with "set: pipefail: invalid option name"
+# because it reads the trailing \r as part of the option.
+*.sh        text eol=lf
+
+# Keep other text files normalized but let editors choose endings.
+*.md        text
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.tf        text eol=lf
+*.tfvars    text eol=lf
+*.json      text eol=lf
+*.conf      text eol=lf
+*.env       text eol=lf
+
+# Binary files — never touch line endings.
+*.gz        binary
+*.zip       binary
+*.mbz       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary

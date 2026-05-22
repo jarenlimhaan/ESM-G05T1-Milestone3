@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Push the osTicket image to ECR, then restore the MySQL database.
-# Run from repo root: ./scripts/push-osticket-to-ecr.sh
+# Push the Odoo image to ECR, then restore the PostgreSQL database.
+# Run from repo root: ./scripts/push-odoo-to-ecr.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,15 +10,15 @@ AWS_REGION="${AWS_REGION:-ap-southeast-1}"
 CLUSTER_NAME="esm-enterprise-prod-eks"
 
 # ECR
-PUBLIC_IMAGE="devinsolutions/osticket:1.17.5"
-ECR_REPO="esm/osticket"
-ECR_TAG="1.17.5"
+PUBLIC_IMAGE="odoo:17"
+ECR_REPO="esm/odoo17"
+ECR_TAG="17"
 
-# Database (shares the Moodle MySQL RDS instance)
-DB_HOST="esm-enterprise-prod-moodle.c9asmcmsm7pz.ap-southeast-1.rds.amazonaws.com"
-DB_NAME="osticketdb"
-DB_USER="moodle_admin"
-SQL_DUMP="${REPO_ROOT}/data/osticket/osticket.sql.gz"
+# Database
+DB_HOST="esm-enterprise-prod-odoo.c9asmcmsm7pz.ap-southeast-1.rds.amazonaws.com"
+DB_NAME="odoodb"
+DB_USER="odoo_admin"
+SQL_DUMP="${REPO_ROOT}/data/odoo17/odoo.sql.gz"
 
 # ── Preflight ──────────────────────────────────────────────────────────────────
 [[ -f "${SQL_DUMP}" ]] || { echo "Error: SQL dump not found: ${SQL_DUMP}" >&2; exit 1; }
@@ -46,57 +46,63 @@ echo "==> Pushing to ECR..."
 docker push "${ECR_IMAGE}"
 echo "    Image pushed: ${ECR_IMAGE}"
 
-# ── Phase 2: Restore MySQL database ───────────────────────────────────────────
+# ── Phase 2: Restore PostgreSQL database ──────────────────────────────────────
 echo ""
 echo "==> Authenticating to EKS cluster: ${CLUSTER_NAME}..."
 aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
 
-echo "==> Scaling down osTicket deployment..."
-kubectl scale deployment/osticket -n osticket-private --replicas=0 2>/dev/null || true
+echo "==> Scaling down Odoo deployments..."
+kubectl scale deployment/odoo-private -n odoo-private --replicas=0 2>/dev/null || true
+kubectl scale deployment/odoo-public  -n odoo-public  --replicas=0 2>/dev/null || true
 
-POD_NAME="osticket-db-restore-$(date +%s)"
+POD_NAME="odoo-db-restore-$(date +%s)"
 echo "==> Starting restore pod: ${POD_NAME}..."
 
-# MYSQL_PWD is injected from the existing osticket-db k8s secret — never in plaintext.
+# PGPASSWORD is injected from the existing odoo-db k8s secret — never in plaintext.
 kubectl apply -f - >/dev/null <<EOF
 apiVersion: v1
 kind: Pod
 metadata:
   name: ${POD_NAME}
-  namespace: osticket-private
+  namespace: odoo-private
 spec:
   restartPolicy: Never
   containers:
-    - name: mysql
-      image: mysql:8.0
+    - name: postgres
+      image: postgres:15
       command: ["sh", "-c", "sleep 3600"]
       env:
-        - name: MYSQL_PWD
+        - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
-              name: osticket-db
+              name: odoo-db
               key: password
 EOF
 
 echo "==> Waiting for restore pod to be ready..."
-kubectl wait --for=condition=Ready "pod/${POD_NAME}" -n osticket-private --timeout=120s >/dev/null
+kubectl wait --for=condition=Ready "pod/${POD_NAME}" -n odoo-private --timeout=120s >/dev/null
 
 echo "==> Uploading SQL dump to pod..."
-kubectl exec -i -n osticket-private "${POD_NAME}" -- sh -ceu "cat > /tmp/osticket.sql.gz" < "${SQL_DUMP}"
+kubectl exec -i -n odoo-private "${POD_NAME}" -- sh -ceu "cat > /tmp/odoo.sql.gz" < "${SQL_DUMP}"
 
 echo "==> Restoring database ${DB_NAME}..."
-kubectl exec -n osticket-private "${POD_NAME}" -- sh -ceu "
-mysql -h '${DB_HOST}' -u '${DB_USER}' -e \"DROP DATABASE IF EXISTS ${DB_NAME};\";
-mysql -h '${DB_HOST}' -u '${DB_USER}' -e \"CREATE DATABASE ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\";
-mysql -h '${DB_HOST}' -u '${DB_USER}' -e \"GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'%'; FLUSH PRIVILEGES;\";
-gunzip -c /tmp/osticket.sql.gz | mysql -h '${DB_HOST}' -u '${DB_USER}' '${DB_NAME}';
+kubectl exec -n odoo-private "${POD_NAME}" -- sh -ceu "
+psql -h '${DB_HOST}' -U '${DB_USER}' -d postgres -tAc \
+  \"SELECT 1 FROM pg_roles WHERE rolname='odoo17'\" | grep -q 1 || \
+  psql -h '${DB_HOST}' -U '${DB_USER}' -d postgres -c \"CREATE ROLE odoo17\";
+psql -h '${DB_HOST}' -U '${DB_USER}' -d postgres -c \
+  \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${DB_NAME}' AND pid <> pg_backend_pid();\";
+psql -h '${DB_HOST}' -U '${DB_USER}' -d postgres -c \"DROP DATABASE IF EXISTS ${DB_NAME};\";
+psql -h '${DB_HOST}' -U '${DB_USER}' -d postgres -c \"CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};\";
+gunzip -c /tmp/odoo.sql.gz | psql -h '${DB_HOST}' -U '${DB_USER}' -d '${DB_NAME}';
 "
 
 echo "==> Cleaning up restore pod..."
-kubectl delete pod "${POD_NAME}" -n osticket-private --ignore-not-found >/dev/null
+kubectl delete pod "${POD_NAME}" -n odoo-private --ignore-not-found >/dev/null
 
-echo "==> Scaling osTicket deployment back up..."
-kubectl scale deployment/osticket -n osticket-private --replicas=1
+echo "==> Scaling Odoo deployments back up..."
+kubectl scale deployment/odoo-private -n odoo-private --replicas=1
+kubectl scale deployment/odoo-public  -n odoo-public  --replicas=1
 
 echo ""
 echo "Done."

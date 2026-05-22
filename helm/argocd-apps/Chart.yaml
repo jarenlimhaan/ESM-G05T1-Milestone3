@@ -1,0 +1,8 @@
+apiVersion: v2
+name: argocd-apps
+version: 0.1.0
+description: >
+  App of Apps umbrella chart. Each entry in values.yaml (or an environment
+  override file) renders one ArgoCD Application object. ArgoCD watches this
+  chart and manages every other Application in the cluster automatically —
+  no manual kubectl apply after the initial bootstrap.

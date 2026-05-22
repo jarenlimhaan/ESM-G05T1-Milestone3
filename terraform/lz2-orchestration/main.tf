@@ -66,20 +66,51 @@ resource "aws_secretsmanager_secret_version" "moodle_db_password" {
   secret_string = var.moodle_db_password
 }
 
-resource "aws_secretsmanager_secret" "osticket_db_password" {
-  name                    = var.osticket_db_password_secret_id
+# osTicket DB password — osTicket shares the same MySQL RDS instance as Moodle.
+# Both apps connect with the same master credentials (moodle_db_password).
+# No separate secret is required; the osticket IRSA role is granted access
+# to moodle_db_password so the CSI driver fetches the correct credential.
+
+resource "aws_secretsmanager_secret" "moodle_admin_password" {
+  name                    = var.moodle_admin_password_secret_id
   recovery_window_in_days = 0
   tags                    = local.common_tags
 }
 
-resource "aws_secretsmanager_secret_version" "osticket_db_password" {
-  secret_id     = aws_secretsmanager_secret.osticket_db_password.id
-  secret_string = var.osticket_db_password
+resource "aws_secretsmanager_secret_version" "moodle_admin_password" {
+  secret_id     = aws_secretsmanager_secret.moodle_admin_password.id
+  secret_string = var.moodle_admin_password
+}
+
+resource "aws_secretsmanager_secret" "osticket_install_secret" {
+  name                    = var.osticket_install_secret_id
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "osticket_install_secret" {
+  secret_id     = aws_secretsmanager_secret.osticket_install_secret.id
+  secret_string = var.osticket_install_secret
+}
+
+resource "aws_secretsmanager_secret" "osticket_admin_password" {
+  name                    = var.osticket_admin_password_secret_id
+  recovery_window_in_days = 0
+  tags                    = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "osticket_admin_password" {
+  secret_id     = aws_secretsmanager_secret.osticket_admin_password.id
+  secret_string = var.osticket_admin_password
 }
 
 locals {
   odoo_db_password_resolved   = aws_secretsmanager_secret_version.odoo_db_password.secret_string
   moodle_db_password_resolved = aws_secretsmanager_secret_version.moodle_db_password.secret_string
+
+  # OIDC issuer without the https:// prefix — used as the condition key prefix
+  # in IRSA trust policies (IAM condition keys use the bare hostname, not a URL)
+  oidc_issuer = replace(module.eks.cluster_oidc_issuer_url, "https://", "")
 }
 
 module "rds" {
@@ -384,7 +415,8 @@ resource "kubernetes_secret" "moodle_db" {
   }
 
   data = {
-    password = aws_secretsmanager_secret_version.moodle_db_password.secret_string
+    password       = aws_secretsmanager_secret_version.moodle_db_password.secret_string
+    admin_password = var.moodle_admin_password
   }
 }
 
@@ -395,8 +427,241 @@ resource "kubernetes_secret" "osticket_db" {
   }
 
   data = {
-    password       = aws_secretsmanager_secret_version.osticket_db_password.secret_string
+    # osTicket shares the Moodle MySQL RDS instance — use the same master credential.
+    password       = aws_secretsmanager_secret_version.moodle_db_password.secret_string
     install_secret = var.osticket_install_secret
     admin_password = var.osticket_admin_password
   }
+}
+
+# ==============================================================================
+# IRSA — IAM Roles for Service Accounts
+# ==============================================================================
+# Each application workload gets its own IAM role bound to its Kubernetes
+# service account via the EKS OIDC provider. Pods exchange their projected
+# service account JWT for temporary AWS STS credentials, which are then used
+# by the Secrets Store CSI Driver (ASCP) to call secretsmanager:GetSecretValue.
+#
+# Trust policy conditions:
+#   :aud — ensures the token was projected for AWS STS, not the Kubernetes API
+#   :sub — scopes the role to one specific service account in one namespace
+
+# ------------------------------------------------------------------------------
+# Odoo Private
+# ------------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "irsa_odoo_private_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.cluster_oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.oidc_issuer}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.oidc_issuer}:sub"
+      values   = ["system:serviceaccount:odoo-private:odoo-private"]
+    }
+  }
+}
+
+resource "aws_iam_role" "odoo_private" {
+  name               = "${local.project_prefix}-odoo-private-irsa"
+  assume_role_policy = data.aws_iam_policy_document.irsa_odoo_private_trust.json
+  tags               = local.common_tags
+}
+
+data "aws_iam_policy_document" "odoo_private_secrets" {
+  statement {
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+    resources = [aws_secretsmanager_secret.odoo_db_password.arn]
+  }
+}
+
+resource "aws_iam_policy" "odoo_private_secrets" {
+  name   = "${local.project_prefix}-odoo-private-secrets"
+  policy = data.aws_iam_policy_document.odoo_private_secrets.json
+  tags   = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "odoo_private_secrets" {
+  role       = aws_iam_role.odoo_private.name
+  policy_arn = aws_iam_policy.odoo_private_secrets.arn
+}
+
+# ------------------------------------------------------------------------------
+# Odoo Public
+# ------------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "irsa_odoo_public_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.cluster_oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.oidc_issuer}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.oidc_issuer}:sub"
+      values   = ["system:serviceaccount:odoo-public:odoo-public"]
+    }
+  }
+}
+
+resource "aws_iam_role" "odoo_public" {
+  name               = "${local.project_prefix}-odoo-public-irsa"
+  assume_role_policy = data.aws_iam_policy_document.irsa_odoo_public_trust.json
+  tags               = local.common_tags
+}
+
+data "aws_iam_policy_document" "odoo_public_secrets" {
+  statement {
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+    resources = [aws_secretsmanager_secret.odoo_db_password.arn]
+  }
+}
+
+resource "aws_iam_policy" "odoo_public_secrets" {
+  name   = "${local.project_prefix}-odoo-public-secrets"
+  policy = data.aws_iam_policy_document.odoo_public_secrets.json
+  tags   = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "odoo_public_secrets" {
+  role       = aws_iam_role.odoo_public.name
+  policy_arn = aws_iam_policy.odoo_public_secrets.arn
+}
+
+# ------------------------------------------------------------------------------
+# Moodle
+# ------------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "irsa_moodle_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.cluster_oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.oidc_issuer}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.oidc_issuer}:sub"
+      values   = ["system:serviceaccount:moodle-private:moodle"]
+    }
+  }
+}
+
+resource "aws_iam_role" "moodle" {
+  name               = "${local.project_prefix}-moodle-irsa"
+  assume_role_policy = data.aws_iam_policy_document.irsa_moodle_trust.json
+  tags               = local.common_tags
+}
+
+data "aws_iam_policy_document" "moodle_secrets" {
+  statement {
+    effect  = "Allow"
+    actions = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+    resources = [
+      aws_secretsmanager_secret.moodle_db_password.arn,
+      aws_secretsmanager_secret.moodle_admin_password.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "moodle_secrets" {
+  name   = "${local.project_prefix}-moodle-secrets"
+  policy = data.aws_iam_policy_document.moodle_secrets.json
+  tags   = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "moodle_secrets" {
+  role       = aws_iam_role.moodle.name
+  policy_arn = aws_iam_policy.moodle_secrets.arn
+}
+
+# ------------------------------------------------------------------------------
+# osTicket
+# ------------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "irsa_osticket_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.cluster_oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.oidc_issuer}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.oidc_issuer}:sub"
+      values   = ["system:serviceaccount:osticket-private:osticket"]
+    }
+  }
+}
+
+resource "aws_iam_role" "osticket" {
+  name               = "${local.project_prefix}-osticket-irsa"
+  assume_role_policy = data.aws_iam_policy_document.irsa_osticket_trust.json
+  tags               = local.common_tags
+}
+
+data "aws_iam_policy_document" "osticket_secrets" {
+  statement {
+    effect  = "Allow"
+    actions = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+    resources = [
+      # DB password: osTicket shares the Moodle MySQL RDS — use moodle_db_password secret.
+      aws_secretsmanager_secret.moodle_db_password.arn,
+      aws_secretsmanager_secret.osticket_install_secret.arn,
+      aws_secretsmanager_secret.osticket_admin_password.arn,
+    ]
+  }
+}
+
+resource "aws_iam_policy" "osticket_secrets" {
+  name   = "${local.project_prefix}-osticket-secrets"
+  policy = data.aws_iam_policy_document.osticket_secrets.json
+  tags   = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "osticket_secrets" {
+  role       = aws_iam_role.osticket.name
+  policy_arn = aws_iam_policy.osticket_secrets.arn
 }

@@ -1,0 +1,124 @@
+# ==============================================================================
+# Odoo Helm Chart — Default Values
+# ==============================================================================
+# This file contains defaults only. All environment-specific values (RDS
+# endpoints, EFS IDs, IRSA ARNs, ECR URIs, secret names) MUST be supplied
+# via environments/prod/odoo-private.yaml or environments/prod/odoo-public.yaml.
+#
+# instance controls which templates are rendered:
+#   "private" — internal ALB, full nginx proxy (all routes), startupProbe enabled
+#   "public"  — internet-facing ALB, nginx restricted to static routes only
+# ==============================================================================
+
+# Top-level instance flag — MUST be overridden per release
+# Override: "private" (odoo-private release) | "public" (odoo-public release)
+instance: "private"
+
+# ------------------------------------------------------------------------------
+# Image
+# ------------------------------------------------------------------------------
+image:
+  repository: ""          # ECR URI, e.g. 123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/esm/odoo17
+  tag: ""                 # Image tag, e.g. latest or a specific digest
+  pullPolicy: IfNotPresent
+
+# ------------------------------------------------------------------------------
+# Replica count for the Odoo application pod (not the nginx gateway)
+# minReplicas in autoscaling overrides this at runtime via HPA
+# ------------------------------------------------------------------------------
+replicaCount: 2
+
+# ------------------------------------------------------------------------------
+# nginx Gateway
+# ------------------------------------------------------------------------------
+gateway:
+  replicas: 2             # Gateway pods are stateless; 2 ensures one can restart freely
+
+# ------------------------------------------------------------------------------
+# Kubernetes Service (NodePort — consumed by the ALB target group)
+# ------------------------------------------------------------------------------
+service:
+  nodePort: 30081         # Private default. Override to 30080 for public release.
+
+# ------------------------------------------------------------------------------
+# Database (PostgreSQL via RDS)
+# ------------------------------------------------------------------------------
+db:
+  host: ""                # RDS endpoint, e.g. esm-prod-odoo.xxxx.ap-southeast-1.rds.amazonaws.com
+  port: 5432
+  name: ""                # RDS database name
+  user: ""                # RDS master username
+
+# ------------------------------------------------------------------------------
+# EFS Persistent Volume
+# storageClassName must match between PV and PVC; no StorageClass object is
+# required for static EFS provisioning (volumeName is explicit).
+# Use efs-static-odoo-private for the private release and override to
+# efs-static-odoo-public in environments/prod/odoo-public.yaml to prevent
+# cross-mount between the two instances.
+# ------------------------------------------------------------------------------
+persistence:
+  enabled: true
+  storageClassName: "efs-static-odoo-private"  # Override to "efs-static-odoo-public" for public release
+  efsId: ""               # EFS file system ID, e.g. fs-0123456789abcdef0
+  accessPointId: ""       # EFS access point ID — private: ap-xxx (/odoo), public: ap-yyy (/odoo-public)
+
+# ------------------------------------------------------------------------------
+# Probes
+# startupProbe is enabled for both private and public instances.
+# The private instance has longer startup tolerance (18 × 10s = 180s max).
+# The public instance uses the same probe timing.
+# ------------------------------------------------------------------------------
+probes:
+  startupEnabled: true    # true for both private and public
+
+# ------------------------------------------------------------------------------
+# Horizontal Pod Autoscaler
+# minReplicas is set to 2 so one pod can restart/be evicted while the other
+# continues to absorb traffic. maxReplicas caps cost.
+# ------------------------------------------------------------------------------
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  cpuUtilization: 70      # Scale up when average CPU across pods exceeds 70%
+  memoryUtilization: 80   # Scale up when average memory across pods exceeds 80%
+
+# ------------------------------------------------------------------------------
+# Resource requests and limits
+# Requests are used by the scheduler for node placement.
+# Limits cap container resource consumption.
+# ------------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+# ------------------------------------------------------------------------------
+# Ingress
+# groupOrder controls the listener rule priority within the ALB IngressGroup.
+# Both private and public use the same order value; they are on different ALBs
+# (esm-internal vs esm-public) so there is no conflict.
+# ------------------------------------------------------------------------------
+ingress:
+  groupOrder: "10"
+
+# ------------------------------------------------------------------------------
+# ServiceAccount + IRSA
+# The service account is annotated with the IAM role ARN so the pod can call
+# AWS Secrets Manager via ASCP without static credentials.
+# ------------------------------------------------------------------------------
+serviceAccount:
+  irsaRoleArn: ""         # IAM role ARN, e.g. arn:aws:iam::123456789012:role/esm-prod-odoo-private-role
+
+# ------------------------------------------------------------------------------
+# Secrets Store CSI Driver / ASCP
+# dbPasswordSecretId is the Secrets Manager secret name (not ARN).
+# The SecretProviderClass fetches this secret and syncs it to a K8s Secret
+# named "odoo-db" with key "password", consumed by the deployment via secretKeyRef.
+# ------------------------------------------------------------------------------
+secrets:
+  dbPasswordSecretId: ""  # SM secret name, e.g. esm-prod-odoo-db-password

@@ -107,7 +107,7 @@ variable "vpn_server_certificate_arn" {
 variable "eks_cluster_version" {
   description = "Kubernetes version for EKS cluster"
   type        = string
-  default     = "1.29"
+  default     = "1.30"
 }
 
 variable "eks_node_instance_type" {
@@ -190,17 +190,26 @@ variable "moodle_db_password_secret_id" {
   default     = "esm/prod/moodle-db-password"
 }
 
-variable "osticket_db_password" {
-  description = "Password for osTicket MySQL database (shared MySQL instance)"
+variable "moodle_admin_password" {
+  description = "Moodle admin user password"
   type        = string
   sensitive   = true
   default     = null
 }
 
-variable "osticket_db_password_secret_id" {
-  description = "AWS Secrets Manager secret ID containing osTicket DB password"
+variable "moodle_admin_password_secret_id" {
+  description = "AWS Secrets Manager secret ID containing Moodle admin password"
   type        = string
-  default     = "esm/prod/osticket-db-password"
+  default     = "esm/prod/moodle-admin-password"
+}
+
+# osticket_db_password removed — osTicket shares the Moodle MySQL RDS instance
+# and uses the same master credentials (moodle_db_password).
+
+variable "osticket_db_name" {
+  description = "Database schema name for osTicket on the shared MySQL RDS instance"
+  type        = string
+  default     = "osticketdb"
 }
 
 variable "osticket_install_secret" {
@@ -210,11 +219,23 @@ variable "osticket_install_secret" {
   default     = null
 }
 
+variable "osticket_install_secret_id" {
+  description = "AWS Secrets Manager secret ID containing osTicket install secret"
+  type        = string
+  default     = "esm/prod/osticket-install-secret"
+}
+
 variable "osticket_admin_password" {
   description = "osTicket admin user password"
   type        = string
   sensitive   = true
   default     = null
+}
+
+variable "osticket_admin_password_secret_id" {
+  description = "AWS Secrets Manager secret ID containing osTicket admin password"
+  type        = string
+  default     = "esm/prod/osticket-admin-password"
 }
 
 variable "db_instance_class" {

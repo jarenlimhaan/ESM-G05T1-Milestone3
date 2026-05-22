@@ -1,0 +1,155 @@
+# ==============================================================================
+# argocd-apps Helm Chart — Default Values
+# ==============================================================================
+# This file contains DEFAULTS and STRUCTURE only.
+#
+# Environment-specific overrides (GitHub repo URL, branch, cluster name,
+# IRSA ARNs, workload app configs) belong in:
+#   environments/prod/argocd-apps.yaml
+#
+# The bootstrap ArgoCD Application merges both files:
+#   helm/argocd-apps/values.yaml          <- defaults (this file)
+#   environments/prod/argocd-apps.yaml    <- prod overrides
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Shared destination — all Applications in this chart target the same cluster.
+# Overridden in environments/prod/argocd-apps.yaml.
+# ------------------------------------------------------------------------------
+destinationServer: ""   # e.g. https://kubernetes.default.svc
+
+# ------------------------------------------------------------------------------
+# Source repo — used by workload apps (Batch 4) which source from this Git
+# repo rather than an external Helm registry.
+# Overridden in environments/prod/argocd-apps.yaml.
+# ------------------------------------------------------------------------------
+repoURL: ""             # e.g. https://github.com/jarenlimhaan/ESM-G05T1-Milestone3
+targetRevision: ""      # e.g. main  (feature/helm-charts during development)
+
+# ------------------------------------------------------------------------------
+# System Applications
+# Each entry installs one upstream Helm chart into kube-system via ArgoCD.
+#
+# Fields per entry:
+#   name          - ArgoCD Application name (must be unique)
+#   namespace     - Kubernetes namespace to install into
+#   repoURL       - Upstream Helm chart repository URL
+#   chart         - Helm chart name within that repository
+#   targetRevision- Pinned chart version (always pin — never use "latest")
+#   syncWave      - argocd.argoproj.io/sync-wave annotation value (string)
+#                   "-2" = before all workloads (infra layer)
+#                   "-1" = after infra, before app secrets layer
+#   helmValues    - Inline Helm values string (multiline YAML block)
+#   ignoreDiffs   - List of jsonPointers ArgoCD should not treat as drift
+#                   (e.g. /spec/replicas owned by HPA or leader-election)
+# ------------------------------------------------------------------------------
+systemApps:
+
+  # ----------------------------------------------------------------------------
+  # metrics-server
+  # Required by HPA (Horizontal Pod Autoscaler) to read CPU/memory metrics.
+  # Two replicas so a restart of one does not create a gap in HPA metrics.
+  # --kubelet-insecure-tls: EKS node TLS SANs do not always match hostnames.
+  # ----------------------------------------------------------------------------
+  - name: metrics-server
+    namespace: kube-system
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    chart: metrics-server
+    targetRevision: "3.12.1"
+    syncWave: "-2"
+    helmValues: |
+      args:
+        - --kubelet-insecure-tls
+      replicas: 2
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+
+  # ----------------------------------------------------------------------------
+  # cluster-autoscaler
+  # Scales EKS node groups up/down based on pending/underutilised pods.
+  # clusterName and role-arn are prod-specific — set in
+  # environments/prod/argocd-apps.yaml after `terraform apply`.
+  # ignoreDiffs on /spec/replicas because leader-election manages the active
+  # replica count at runtime; ArgoCD must not fight it.
+  # ----------------------------------------------------------------------------
+  - name: cluster-autoscaler
+    namespace: kube-system
+    repoURL: https://kubernetes.github.io/autoscaler
+    chart: cluster-autoscaler
+    targetRevision: "9.43.0"
+    syncWave: "-2"
+    helmValues: |
+      cloudProvider: aws
+      awsRegion: ap-southeast-1
+      autoDiscovery:
+        clusterName: ""   # TODO: fill in from `terraform output eks_cluster_name` after apply
+      rbac:
+        create: true
+        serviceAccount:
+          create: true
+          name: cluster-autoscaler
+          annotations:
+            eks.amazonaws.com/role-arn: ""   # TODO: fill in from `terraform output eks_cluster_autoscaler_role_arn` after apply
+      extraArgs:
+        scale-down-delay-after-add: 10m
+        scale-down-unneeded-time: 10m
+        skip-nodes-with-local-storage: "false"
+        expander: least-waste
+      replicaCount: 2
+      podDisruptionBudget:
+        maxUnavailable: 1
+    ignoreDiffs:
+      - group: apps
+        kind: Deployment
+        jsonPointers:
+          - /spec/replicas
+
+  # ----------------------------------------------------------------------------
+  # secrets-store-csi-driver
+  # Generic CSI driver engine. Runs as a DaemonSet on every node and intercepts
+  # volume mount requests of type `csi` for SecretProviderClass objects.
+  # syncSecret.enabled: true — syncs fetched secrets to real Kubernetes Secret
+  #   objects, enabling secretKeyRef in env vars (not just volume mounts).
+  # enableSecretRotation: true — re-fetches and re-syncs secrets every
+  #   rotationPollInterval so pods pick up rotated values without restart.
+  # Installed before workload apps (syncWave: "-1") so the driver is ready
+  # when app pods first start and request their SecretProviderClass volumes.
+  # ----------------------------------------------------------------------------
+  - name: secrets-store-csi-driver
+    namespace: kube-system
+    repoURL: https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts
+    chart: secrets-store-csi-driver
+    targetRevision: "1.4.4"
+    syncWave: "-1"
+    helmValues: |
+      syncSecret:
+        enabled: true
+      enableSecretRotation: true
+      rotationPollInterval: 2m
+
+  # ----------------------------------------------------------------------------
+  # secrets-store-csi-driver-provider-aws (ASCP)
+  # AWS-specific plugin for the CSI driver. Runs as a DaemonSet alongside the
+  # driver and is the component that calls secretsmanager:GetSecretValue using
+  # the pod's IRSA-provided temporary STS credentials.
+  # Must be installed in the same wave as the CSI driver (-1) so both are
+  # ready before workload pods start.
+  # ----------------------------------------------------------------------------
+  - name: secrets-store-csi-driver-provider-aws
+    namespace: kube-system
+    repoURL: https://aws.github.io/secrets-store-csi-driver-provider-aws
+    chart: secrets-store-csi-driver-provider-aws
+    targetRevision: "0.3.9"
+    syncWave: "-1"
+
+# ------------------------------------------------------------------------------
+# Workload Applications
+# Populated in Batch 4 after `terraform apply` produces real RDS endpoints,
+# EFS access point IDs, and IRSA role ARNs.
+# Each entry sources a chart from this Git repo (repoURL / targetRevision above)
+# and merges the chart's own values.yaml with an environments/prod overlay.
+#
+# Left empty here — entries go in environments/prod/argocd-apps.yaml.
+# ------------------------------------------------------------------------------
+workloadApps: []

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: odoo
+version: 0.1.0
+appVersion: "17.0"
+description: Odoo 17 deployment for the ESM Enterprise platform

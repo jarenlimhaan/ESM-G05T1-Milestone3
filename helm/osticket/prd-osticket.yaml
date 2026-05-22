@@ -1,0 +1,42 @@
+# ==============================================================================
+# osTicket — Production Overlay
+# ==============================================================================
+
+image:
+  repository: "990521646880.dkr.ecr.ap-southeast-1.amazonaws.com/esm/osticket"  # run scripts/push-osticket-to-ecr.sh first
+  tag: "1.17.5"
+
+db:
+  # Shared Moodle MySQL RDS instance, osticket schema
+  host: "esm-enterprise-prod-moodle.c9asmcmsm7pz.ap-southeast-1.rds.amazonaws.com"
+  name: "osticketdb"
+  user: "moodle_admin"
+
+persistence:
+  enabled: true
+  efsId: "fs-09adfe24a1c9304eb"
+  accessPointId: "fsap-0c2713097f9e21086"
+
+replicaCount: 2
+
+osticket:
+  installName: "ESM Enterprise Support"
+  installUrl: "http://osticket.internal.esm.local/osticket"
+  installEmail: ""    # helpdesk notification e-mail
+  adminFirstname: ""  # admin first name
+  adminLastname: ""   # admin last name
+  adminEmail: ""      # admin e-mail
+  adminUsername: ""   # admin login username
+  cronInterval: "5"
+
+serviceAccount:
+  irsaRoleArn: "arn:aws:iam::990521646880:role/esm-enterprise-prod-osticket-irsa"
+
+secrets:
+  # osTicket shares the Moodle MySQL RDS — uses the same DB secret.
+  dbPasswordSecretId: "esm/prod/moodle-db-password"
+  installSecretId: "esm/prod/osticket-install-secret"
+  adminPasswordSecretId: "esm/prod/osticket-admin-password"
+
+autoscaling:
+  enabled: true   # ← change to false

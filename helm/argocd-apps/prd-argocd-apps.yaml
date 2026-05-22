@@ -1,0 +1,127 @@
+# ==============================================================================
+# argocd-apps — Production Overrides
+# ==============================================================================
+# This file overrides helm/argocd-apps/values.yaml with prod-specific values.
+# It is merged by the bootstrap ArgoCD Application via valueFiles.
+#
+# Values that belong here:
+#   - GitHub repo URL and target branch
+#   - Kubernetes API server address
+#   - cluster-autoscaler cluster name + IRSA role ARN (from terraform output)
+#   - workloadApps list
+# ==============================================================================
+
+# Destination cluster for all Applications managed by this chart
+destinationServer: https://kubernetes.default.svc
+
+# This repo — all workload apps source their charts from here
+repoURL: https://github.com/jarenlimhaan/ESM-G05T1-Milestone3
+
+# Active branch. Change to main at Batch 5 ArgoCD cutover.
+targetRevision: feature/helm-charts
+
+# ------------------------------------------------------------------------------
+# System app overrides
+# Only the fields that differ from the chart defaults need to be listed here.
+# Using helm mergeOverwrite, a nested key under a named list entry requires
+# the full entry to be re-declared. Override the two cluster-autoscaler TODOs
+# once `terraform apply` has run.
+# ------------------------------------------------------------------------------
+systemApps:
+  - name: metrics-server
+    namespace: kube-system
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    chart: metrics-server
+    targetRevision: "3.12.1"
+    syncWave: "-2"
+    helmValues: |
+      args:
+        - --kubelet-insecure-tls
+      replicas: 2
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+
+  - name: cluster-autoscaler
+    namespace: kube-system
+    repoURL: https://kubernetes.github.io/autoscaler
+    chart: cluster-autoscaler
+    targetRevision: "9.43.0"
+    syncWave: "-2"
+    helmValues: |
+      cloudProvider: aws
+      awsRegion: ap-southeast-1
+      autoDiscovery:
+        clusterName: esm-enterprise-prod-eks
+      rbac:
+        create: true
+        serviceAccount:
+          create: true
+          name: cluster-autoscaler
+          annotations:
+            eks.amazonaws.com/role-arn: arn:aws:iam::990521646880:role/esm-enterprise-prod-cluster-autoscaler-role
+      extraArgs:
+        scale-down-delay-after-add: 10m
+        scale-down-unneeded-time: 10m
+        skip-nodes-with-local-storage: "false"
+        expander: least-waste
+      replicaCount: 2
+      podDisruptionBudget:
+        maxUnavailable: 1
+    ignoreDiffs:
+      - group: apps
+        kind: Deployment
+        jsonPointers:
+          - /spec/replicas
+
+  - name: secrets-store-csi-driver
+    namespace: kube-system
+    repoURL: https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts
+    chart: secrets-store-csi-driver
+    targetRevision: "1.4.4"
+    syncWave: "-1"
+    helmValues: |
+      syncSecret:
+        enabled: true
+      enableSecretRotation: true
+      rotationPollInterval: 2m
+
+  - name: secrets-store-csi-driver-provider-aws
+    namespace: kube-system
+    repoURL: https://aws.github.io/secrets-store-csi-driver-provider-aws
+    chart: secrets-store-csi-driver-provider-aws
+    targetRevision: "0.3.9"
+    syncWave: "-1"
+
+# ------------------------------------------------------------------------------
+# Workload Applications
+# Each entry creates one ArgoCD Application pointing at a Helm chart in this
+# repo, merged with the matching prd-<app>.yaml overlay co-located in the
+# chart directory.
+# Fill placeholder values in each overlay after `terraform apply`.
+# valuesFile paths are relative to each chart's path (e.g. helm/odoo/).
+# ------------------------------------------------------------------------------
+workloadApps:
+  - name: odoo-private
+    namespace: odoo-private
+    path: helm/odoo
+    valuesFile: prd-odoo-private.yaml
+    syncWave: "0"
+
+  - name: odoo-public
+    namespace: odoo-public
+    path: helm/odoo
+    valuesFile: prd-odoo-public.yaml
+    syncWave: "0"
+
+  - name: moodle
+    namespace: moodle-private
+    path: helm/moodle
+    valuesFile: prd-moodle.yaml
+    syncWave: "0"
+
+  - name: osticket
+    namespace: osticket-private
+    path: helm/osticket
+    valuesFile: prd-osticket.yaml
+    syncWave: "0"
