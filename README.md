@@ -1,6 +1,18 @@
-﻿> **Dell Technologies Solution Management Competition — Finalist**
-> This project was selected as a finalist in the Dell Technologies Solution Management competition, placing among the top teams out of 80+ submissions across 11 classes. The team built the ESMOS Healthcare Portal integrating Odoo, Moodle, and osTicket, and treated the project as a real production environment rather than a graded submission.
-> [Read the full write-up on LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:7459995555872739328/)
+﻿<div align="center">
+
+# ESMOS Healthcare Portal
+
+### 🏆 Dell Technologies Solution Management Competition — Finalist
+
+<a href="https://www.linkedin.com/feed/update/urn:li:activity:7459995555872739328/">
+  <img src="https://img.shields.io/badge/Dell%20Competition-Finalist-blue?style=for-the-badge&logo=dell&logoColor=white" alt="Dell Competition Finalist"/>
+</a>
+
+<br/>
+
+*Selected as a finalist out of 80+ teams across 11 classes. Built and operated as a real production environment — not just a demo.*
+
+</div>
 
 This repository provisions the ESM production environment on AWS through a three-level Terraform landing zone, then deploys three enterprise applications — Odoo (ERP), Moodle (LMS), and osTicket (helpdesk) — onto EKS using Helm 3 and ArgoCD.
 
