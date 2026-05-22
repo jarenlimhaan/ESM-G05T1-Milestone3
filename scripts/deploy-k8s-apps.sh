@@ -11,7 +11,7 @@ Usage:
     [--odoo-secret-id "<aws-secretsmanager-id>"] \
     [--moodle-secret-id "<aws-secretsmanager-id>"] \
     [--osticket-secret-id "<aws-secretsmanager-id>"] \
-    [--terraform-dir terraform] \
+    [--terraform-dir terraform/lz2-orchestration] \
     [--aws-region ap-southeast-1] \
     [--odoo-db-user odoo_admin] \
     [--odoo-image "<image-ref>"] \
@@ -52,7 +52,7 @@ Options:
   --moodle-secret-id     AWS Secrets Manager secret id for Moodle DB password.
   --osticket-secret-id   AWS Secrets Manager secret id for osTicket DB password.
                          If omitted, Moodle secret/password is reused.
-  --terraform-dir        Terraform directory (default: terraform).
+  --terraform-dir        Terraform directory (default: terraform/lz2-orchestration).
   --aws-region           AWS region. If omitted, read from Terraform output.
   --odoo-db-user         Odoo DB user (default: odoo_admin).
   --odoo-image           Odoo container image (default: resolved from running cluster deployment or
@@ -155,6 +155,86 @@ tf_output_raw() {
   printf '%s' "${cleaned}"
 }
 
+wait_for_service_endpoints() {
+  local namespace="$1"
+  local service="$2"
+  local min_count="${3:-1}"
+  local timeout_seconds="${4:-300}"
+  local start_ts
+  start_ts="$(date +%s)"
+
+  echo "Waiting for ${namespace}/${service} to have at least ${min_count} endpoint(s)..."
+  while true; do
+    local endpoints
+    local count
+    endpoints="$(kubectl get endpoints "${service}" -n "${namespace}" -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)"
+    count="$(wc -w <<<"${endpoints}" | tr -d ' ')"
+    if [[ "${count}" -ge "${min_count}" ]]; then
+      echo "${namespace}/${service} endpoints ready: ${endpoints}"
+      return 0
+    fi
+
+    if (( $(date +%s) - start_ts >= timeout_seconds )); then
+      echo "Error: timed out waiting for ${namespace}/${service} endpoints." >&2
+      kubectl get pods -n "${namespace}" -o wide || true
+      kubectl describe service "${service}" -n "${namespace}" || true
+      return 1
+    fi
+    sleep 5
+  done
+}
+
+wait_for_public_odoo_http() {
+  local url=""
+  local required_successes=3
+  local successes=0
+  local timeout_seconds=420
+  local start_ts
+  start_ts="$(date +%s)"
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "Warning: curl is not available; skipping public ALB HTTP readiness check."
+    return 0
+  fi
+
+  if terraform -chdir="${TERRAFORM_DIR}" output -raw public_alb_dns_name >/dev/null 2>&1; then
+    url="http://$(terraform -chdir="${TERRAFORM_DIR}" output -raw public_alb_dns_name)/"
+  fi
+  if [[ -z "${url}" ]]; then
+    echo "Warning: public_alb_dns_name Terraform output unavailable; skipping public ALB HTTP readiness check."
+    return 0
+  fi
+
+  echo "Waiting for public Odoo URL to return ${required_successes} consecutive HTTP 200 responses: ${url}"
+  while true; do
+    local code
+    code="$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 20 "${url}" 2>/dev/null || true)"
+    if [[ "${code}" == "200" ]]; then
+      successes=$((successes + 1))
+      echo "Public Odoo HTTP check ${successes}/${required_successes}: ${code}"
+      if [[ "${successes}" -ge "${required_successes}" ]]; then
+        return 0
+      fi
+    else
+      if [[ "${successes}" -gt 0 ]]; then
+        echo "Public Odoo HTTP check reset after status '${code:-no-response}'."
+      fi
+      successes=0
+      echo "Public Odoo not stable yet: ${code:-no-response}"
+    fi
+
+    if (( $(date +%s) - start_ts >= timeout_seconds )); then
+      echo "Error: public Odoo did not become stable before timeout." >&2
+      kubectl get pods -n odoo-public -o wide || true
+      kubectl get endpoints -n odoo-public -o wide || true
+      kubectl logs -n odoo-public deployment/odoo-public --tail=120 || true
+      kubectl logs -n odoo-public deployment/odoo-public-gateway --tail=120 || true
+      return 1
+    fi
+    sleep 10
+  done
+}
+
 run_mysql_sql() {
   local sql="$1"
   local pod="mysql-client-$(date +%s%N | tail -c 8)"
@@ -201,7 +281,9 @@ ensure_moodle_db_is_complete() {
 
   if [[ -z "${version}" ]]; then
     # Fallback: if container logs show Moodle install completed, do not hard-fail.
-    if kubectl logs -n moodle-private deployment/moodle --tail=400 2>/dev/null | grep -q "Installation completed successfully"; then
+    local moodle_logs
+    moodle_logs="$(kubectl logs -n moodle-private deployment/moodle --tail=400 2>/dev/null || true)"
+    if grep -q "Installation completed successfully" <<<"${moodle_logs}"; then
       echo "Warning: Moodle version check was inconclusive, but installation logs indicate success. Continuing."
       return 0
     fi
@@ -257,7 +339,7 @@ read_dotenv_value() {
   fi
 }
 
-TERRAFORM_DIR="${REPO_ROOT}/terraform"
+TERRAFORM_DIR="${REPO_ROOT}/terraform/lz2-orchestration"
 K8S_DIR="${REPO_ROOT}/k8s"
 AWS_REGION=""
 ODOO_DB_USER="odoo_admin"
@@ -723,6 +805,9 @@ if [[ "${SKIP_ODOO_ROLLOUT_WAIT}" != "true" ]]; then
   kubectl rollout status deployment/odoo-private -n odoo-private --timeout=300s
   kubectl rollout status deployment/odoo-private-gateway -n odoo-private --timeout=300s
   kubectl rollout status deployment/odoo-public -n odoo-public --timeout=300s
+  wait_for_service_endpoints odoo-public odoo-public 1 300
+  wait_for_service_endpoints odoo-public odoo-public-backend 1 300
+  wait_for_public_odoo_http
 else
   echo "Skipping Odoo rollout wait (bootstrap expected to run afterwards)."
 fi

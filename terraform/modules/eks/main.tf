@@ -436,3 +436,24 @@ resource "aws_eks_addon" "efs_csi_driver" {
     aws_eks_node_group.main
   ]
 }
+
+# ==============================================================================
+# CloudWatch Observability Addon
+# ==============================================================================
+# Enables ContainerInsights metrics/logs in CloudWatch for pod/node widgets.
+
+resource "aws_eks_addon" "cloudwatch_observability" {
+  count = var.enable_cloudwatch_logging ? 1 : 0
+
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "amazon-cloudwatch-observability"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  tags = var.common_tags
+
+  depends_on = [
+    aws_eks_node_group.main,
+    aws_iam_role_policy_attachment.eks_cloudwatch_policy
+  ]
+}

@@ -7,7 +7,7 @@ Install/upgrade ArgoCD on EKS and apply local Argo Application manifest.
 
 Usage:
   ./scripts/install-argocd.sh \
-    [--terraform-dir terraform] \
+    [--terraform-dir terraform/lz2-orchestration] \
     [--cluster-name <eks-cluster-name>] \
     [--aws-region ap-southeast-1] \
     [--app-file argocd/application.yaml] \
@@ -29,7 +29,7 @@ require_cmd() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-TERRAFORM_DIR="${REPO_ROOT}/terraform"
+TERRAFORM_DIR="${REPO_ROOT}/terraform/lz2-orchestration"
 CLUSTER_NAME=""
 AWS_REGION=""
 APP_FILE="${REPO_ROOT}/argocd/application.yaml"

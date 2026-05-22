@@ -8,7 +8,7 @@ Render ArgoCD-ready manifests to k8s-rendered/ (no kubectl apply).
 Usage:
   ./scripts/render-k8s-for-argocd.sh \
     [--output-dir k8s-rendered] \
-    [--terraform-dir terraform] \
+    [--terraform-dir terraform/lz2-orchestration] \
     [--aws-region ap-southeast-1] \
     [any deploy-k8s-apps.sh args...]
 EOF

@@ -5,11 +5,11 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/generate-vpn-profile.sh \
-    [--terraform-dir terraform] \
+    [--terraform-dir terraform/lz1-network] \
     [--output ~/Downloads/esm-vpn-config-fixed.ovpn]
 
 Options:
-  --terraform-dir  Terraform directory (default: terraform).
+  --terraform-dir  Terraform directory containing VPN state (default: terraform/lz1-network).
   --output         Output .ovpn path (default: ~/Downloads/esm-vpn-config-fixed.ovpn).
   -h, --help       Show help.
 
@@ -30,7 +30,7 @@ require_cmd() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-TERRAFORM_DIR="${REPO_ROOT}/terraform"
+TERRAFORM_DIR="${REPO_ROOT}/terraform/lz1-network"
 OUTPUT_FILE="${HOME}/Downloads/esm-vpn-config-fixed.ovpn"
 
 while [[ $# -gt 0 ]]; do
