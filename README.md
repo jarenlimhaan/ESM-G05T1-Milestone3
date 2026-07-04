@@ -10,7 +10,7 @@
 
 <br/>
 
-*Selected as a finalist out of 80+ teams across 11 classes. Built and operated as a real production environment — not just a demo.*
+*Selected as a finalist out of 80+ teams across 11 classes. Built and operated as a real production environment.*
 
 </div>
 
